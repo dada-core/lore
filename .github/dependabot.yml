@@ -17,6 +17,12 @@ updates:
     groups:
       web:
         update-types: [minor, patch]
+    ignore:
+      # Major versions chosen by hand: TypeScript, and the Node.js types that follow the Node.js release in use.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
@@ -30,3 +36,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Java 21 and Node.js 24 are long-term support releases, chosen on purpose: major versions by hand.
+      - dependency-name: eclipse-temurin
+        update-types: [version-update:semver-major]
+      - dependency-name: node
+        update-types: [version-update:semver-major]

@@ -277,7 +277,8 @@ jobs:
           systemctl is-active --quiet lore
           sudo apt-get remove -y lore
           [ ! -e /opt/lore ]
-          [ -d /var/lib/lore/files ]
+          # /var/lib/lore belongs to the lore user (0750): checked as root.
+          sudo test -d /var/lib/lore/files
           if systemctl is-active --quiet lore; then exit 1; fi
       - name: Logs
         if: failure()
