@@ -4,7 +4,7 @@
 # machine whatever the target platform: only the runtime stage differs between amd64 and arm64.
 
 # ---- Interface ----
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+FROM --platform=$BUILDPLATFORM node:25-alpine AS web
 WORKDIR /build/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
