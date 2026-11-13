@@ -18,4 +18,4 @@ We will acknowledge your report, keep you informed of our progress, and credit y
 
 ## Supported versions
 
-No version has been released yet. This section will list the supported versions once the first release is published.
+No stable version has been released yet. The [0.1.0-alpha.1](https://github.com/dada-core/lore/releases/tag/v0.1.0-alpha.1) preview is not meant for production: fixes go into the next version, not into the preview. This section will list the supported versions from 0.1.0.
