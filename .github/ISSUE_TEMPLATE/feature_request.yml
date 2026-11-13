@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest an improvement or a new feature.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today? Describe the need before the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What you would like
+      description: How Lore could help. A screenshot or a sketch is welcome.
+  - type: textarea
+    id: context
+    attributes:
+      label: Your context
+      description: Your role (developer, SRE, support...), the size of your team, where your documentation lives today.
