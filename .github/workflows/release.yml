@@ -3,6 +3,8 @@ name: Release
 # On a v* tag (for example v0.1.0, matching the version in pom.xml): the universal archive, the .deb
 # and .rpm packages for amd64 and arm64, the multi-architecture image ghcr.io/dada-core/lore tagged
 # with the version and its major.minor, the SHA256SUMS file, and a GitHub release with every file.
+# A version with a suffix (v0.1.0-alpha.1, v0.1.0-rc.1) is a preview: its image only gets its own tag,
+# and its release is marked as a pre-release, so releases/latest keeps pointing to the last stable one.
 
 on:
   push:
@@ -21,7 +23,9 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
-      minor: ${{ steps.version.outputs.minor }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      image: ${{ steps.version.outputs.image }}
+      image-tags: ${{ steps.version.outputs.image-tags }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -42,8 +46,22 @@ jobs:
             echo "::error::The tag is $GITHUB_REF_NAME, but pom.xml says $version."
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+          case $version in
+            *SNAPSHOT*) echo "::error::$version is a development version: set the version to release in pom.xml."; exit 1 ;;
+          esac
+          # image: the tag of the image in the published docker-compose.yml. A stable version moves the
+          # major.minor tag (0.1), so that the same file receives the fixes; a preview only has its own.
+          name=ghcr.io/dada-core/lore
+          case $version in
+            *-*) prerelease=true; image=$version; tags=$name:$version ;;
+            *) prerelease=false; image=${version%.*}; tags=$name:$version,$name:${version%.*} ;;
+          esac
+          {
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+            echo "image=$image"
+            echo "image-tags=$tags"
+          } >> "$GITHUB_OUTPUT"
       - name: Interface, tests and application
         run: |
           npm ci --prefix web --no-audit --no-fund
@@ -123,9 +141,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ghcr.io/dada-core/lore:${{ needs.build.outputs.version }}
-            ghcr.io/dada-core/lore:${{ needs.build.outputs.minor }}
+          tags: ${{ needs.build.outputs.image-tags }}
           labels: |
             org.opencontainers.image.title=Lore
             org.opencontainers.image.description=Open source workspace for technical knowledge
@@ -154,17 +170,17 @@ jobs:
           path: source
       - name: Compose file
         env:
-          MINOR: ${{ needs.build.outputs.minor }}
+          IMAGE: ${{ needs.build.outputs.image }}
         run: |
           # The docker-compose.yml of the repository, with the image of the release instead of a local build.
           # The installation guide downloads it from releases/latest/download/docker-compose.yml.
           sed -e '/^    build: \.$/d' \
-              -e "s|^    image: lore:local$|    image: ghcr.io/dada-core/lore:$MINOR|" \
+              -e "s|^    image: lore:local$|    image: ghcr.io/dada-core/lore:$IMAGE|" \
               -e 's|^# Lore and its PostgreSQL database, built from this repository\.$|# Lore and its PostgreSQL database.|' \
               -e 's|docker compose up -d --build|docker compose up -d|' \
               -e '/^# The file published with each release is the same/d' \
               source/docker-compose.yml > dist/docker-compose.yml
-          grep -q "^    image: ghcr.io/dada-core/lore:$MINOR$" dist/docker-compose.yml
+          grep -q "^    image: ghcr.io/dada-core/lore:$IMAGE$" dist/docker-compose.yml
           if grep -q 'build' dist/docker-compose.yml; then echo "docker-compose.yml still builds locally"; exit 1; fi
           cat dist/docker-compose.yml
       - name: Checksums
@@ -176,9 +192,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
+          if [ "$PRERELEASE" = true ]; then
+            set -- --prerelease
+            intro="Preview of Lore $VERSION, to try it out: not for production, its data may not carry over to the next version."
+          else
+            set --
+            intro="Lore $VERSION."
+          fi
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "Lore $VERSION" \
-            --notes "Lore $VERSION. Installation: https://lore.dada-core.com/docs/installation/ (Docker image ghcr.io/dada-core/lore:$VERSION, .deb and .rpm packages, universal archive). Checksums in SHA256SUMS." \
-            --verify-tag
+            --notes "$intro Installation: https://lore.dada-core.com/en/docs/installation/ (Docker image ghcr.io/dada-core/lore:$VERSION, .deb and .rpm packages, universal archive). Checksums in SHA256SUMS." \
+            --verify-tag "$@"
