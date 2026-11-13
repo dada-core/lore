@@ -1,0 +1,184 @@
+name: Release
+
+# On a v* tag (for example v0.1.0, matching the version in pom.xml): the universal archive, the .deb
+# and .rpm packages for amd64 and arm64, the multi-architecture image ghcr.io/dada-core/lore tagged
+# with the version and its major.minor, the SHA256SUMS file, and a GitHub release with every file.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Application and archive
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      minor: ${{ steps.version.outputs.minor }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - id: version
+        name: The tag matches the version in pom.xml
+        run: |
+          version=$(./mvnw -B -q help:evaluate -Dexpression=project.version -DforceStdout)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, but pom.xml says $version."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+      - name: Interface, tests and application
+        run: |
+          npm ci --prefix web --no-audit --no-fund
+          npm run build --prefix web
+          ./mvnw -B verify
+      - name: Universal archive
+        run: sh packaging/package.sh archive
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jar
+          path: target/lore.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archive
+          path: build/dist/
+
+  packages:
+    name: Packages (${{ matrix.arch }})
+    needs: build
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v4
+        with:
+          name: jar
+          path: target
+      - name: Java runtime and packages
+        run: |
+          sh packaging/package.sh runtime
+          sh packaging/package.sh packages ${{ matrix.arch }}
+      - name: The .deb starts as a service
+        run: |
+          docker run -d --name db -p 5432:5432 -e POSTGRES_PASSWORD=postgres-test postgres:18-alpine
+          until docker exec db pg_isready -h 127.0.0.1 >/dev/null 2>&1; do sleep 1; done
+          sleep 2
+          docker exec db psql -U postgres -q -c "create role lore login password 'lore-test'" -c "create database lore owner lore"
+          sudo apt-get install -y ./build/dist/lore_*_${{ matrix.arch }}.deb
+          sudo sed -i 's/^LORE_DB_PASSWORD=.*/LORE_DB_PASSWORD=lore-test/' /etc/lore/lore.env
+          sudo systemctl enable --now lore
+          for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
+          curl -fsS localhost:8080/actuator/health/readiness | grep -q '"UP"'
+          sudo lore help | grep -q reset-password
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.arch }}
+          path: build/dist/
+
+  image:
+    name: Docker image
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/dada-core/lore:${{ needs.build.outputs.version }}
+            ghcr.io/dada-core/lore:${{ needs.build.outputs.minor }}
+          labels: |
+            org.opencontainers.image.title=Lore
+            org.opencontainers.image.description=Open source workspace for technical knowledge
+            org.opencontainers.image.source=https://github.com/dada-core/lore
+            org.opencontainers.image.version=${{ needs.build.outputs.version }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+
+  publish:
+    name: GitHub release
+    needs: [build, packages, image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: archive
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/checkout@v4
+        with:
+          path: source
+      - name: Compose file
+        env:
+          MINOR: ${{ needs.build.outputs.minor }}
+        run: |
+          # The docker-compose.yml of the repository, with the image of the release instead of a local build.
+          # The installation guide downloads it from releases/latest/download/docker-compose.yml.
+          sed -e '/^    build: \.$/d' \
+              -e "s|^    image: lore:local$|    image: ghcr.io/dada-core/lore:$MINOR|" \
+              -e 's|^# Lore and its PostgreSQL database, built from this repository\.$|# Lore and its PostgreSQL database.|' \
+              -e 's|docker compose up -d --build|docker compose up -d|' \
+              -e '/^# The file published with each release is the same/d' \
+              source/docker-compose.yml > dist/docker-compose.yml
+          grep -q "^    image: ghcr.io/dada-core/lore:$MINOR$" dist/docker-compose.yml
+          if grep -q 'build' dist/docker-compose.yml; then echo "docker-compose.yml still builds locally"; exit 1; fi
+          cat dist/docker-compose.yml
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Lore $VERSION" \
+            --notes "Lore $VERSION. Installation: https://lore.dada-core.com/docs/installation/ (Docker image ghcr.io/dada-core/lore:$VERSION, .deb and .rpm packages, universal archive). Checksums in SHA256SUMS." \
+            --verify-tag

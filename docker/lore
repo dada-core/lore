@@ -1,0 +1,6 @@
+#!/bin/sh
+# Administration commands, run inside the container:
+#   docker compose exec lore lore reset-password <e-mail>
+#   docker compose exec lore lore help
+# Starts the application without its web server, runs the command and stops.
+exec java -XX:MaxRAMPercentage=25 -XX:TieredStopAtLevel=1 -jar /opt/lore/lore.jar "$@"

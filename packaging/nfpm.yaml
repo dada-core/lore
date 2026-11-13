@@ -1,0 +1,109 @@
+# .deb and .rpm packages of Lore, built with nfpm (https://nfpm.goreleaser.com) by package.sh,
+# which sets VERSION and ARCH (amd64 or arm64). Paths are relative to the repository root.
+name: lore
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+release: 1
+section: web
+priority: optional
+maintainer: DadaCore <wpoka@dada-core.com>
+vendor: DadaCore
+homepage: https://lore.dada-core.com
+license: AGPL-3.0-only
+description: |-
+  Open source workspace for technical knowledge.
+  Lore brings together the runbooks, procedures, architecture documents and
+  incident reports of technical teams: import, organize, search and maintain
+  them, on your own servers. Needs PostgreSQL 18, local or remote.
+
+contents:
+  # Directories owned by the package, removed with it. /var/lib/lore (the data) is created by
+  # postinstall and kept on removal.
+  - dst: /opt/lore
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /opt/lore/bin
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /opt/lore/lib
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /etc/lore
+    type: dir
+    file_info:
+      mode: 0755
+  - src: ./target/lore.jar
+    dst: /opt/lore/lib/lore.jar
+    file_info:
+      mode: 0644
+  - src: ./build/runtime
+    dst: /opt/lore/runtime
+    type: tree
+  - src: ./packaging/lore
+    dst: /opt/lore/bin/lore
+    file_info:
+      mode: 0755
+  - src: /opt/lore/bin/lore
+    dst: /usr/bin/lore
+    type: symlink
+  # The launcher reads conf/lore.env next to bin/: in the packages, the settings live in /etc/lore.
+  - src: /etc/lore
+    dst: /opt/lore/conf
+    type: symlink
+  - src: ./packaging/lore.env
+    dst: /etc/lore/lore.env
+    type: config|noreplace
+    file_info:
+      mode: 0640
+      owner: root
+      group: lore
+  - src: ./packaging/lore.service
+    dst: /usr/lib/systemd/system/lore.service
+    file_info:
+      mode: 0644
+  - src: ./LICENSE
+    dst: /usr/share/doc/lore/copyright
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: ./LICENSE
+    dst: /usr/share/licenses/lore/LICENSE
+    packager: rpm
+    file_info:
+      mode: 0644
+
+scripts:
+  preinstall: ./packaging/scripts/preinstall.sh
+  postinstall: ./packaging/scripts/postinstall.sh
+  preremove: ./packaging/scripts/preremove.sh
+  postremove: ./packaging/scripts/postremove.sh
+
+# The Java runtime is bundled. PostgreSQL may run on another server: suggested, not required.
+overrides:
+  deb:
+    depends:
+      - passwd
+      - util-linux
+    suggests:
+      - postgresql-18
+  rpm:
+    depends:
+      - shadow-utils
+      - util-linux
+    suggests:
+      - postgresql18-server
+      - postgresql18-contrib
+
+# xz: read by the package tools of every supported release (zstd is not, by the oldest ones).
+rpm:
+  summary: Open source workspace for technical knowledge
+  group: Applications/Internet
+  compression: xz
+
+deb:
+  compression: xz

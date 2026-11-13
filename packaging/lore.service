@@ -1,0 +1,44 @@
+# Lore, installed by the .deb or .rpm package.
+# Settings: /etc/lore/lore.env. Logs and the initial setup code: journalctl -u lore
+[Unit]
+Description=Lore, workspace for technical knowledge
+Documentation=https://lore.dada-core.com/docs/installation/
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=lore
+Group=lore
+Environment=LORE_JAVA_OPTS=-XX:MaxRAMPercentage=25
+EnvironmentFile=/etc/lore/lore.env
+WorkingDirectory=/var/lib/lore
+ExecStart=/opt/lore/runtime/bin/java $LORE_JAVA_OPTS -jar /opt/lore/lib/lore.jar
+# 143: stopped by SIGTERM, after a graceful shutdown.
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+
+# Hardening: Lore only writes in /var/lib/lore, without any privilege. Only directives known to
+# systemd 239 (RHEL 8), the oldest supported release: on it, a newer one would be ignored with a
+# warning. Without capabilities, Lore cannot change the clock, the hostname or the kernel anyway.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/lore
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

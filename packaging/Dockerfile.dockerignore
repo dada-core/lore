@@ -1,0 +1,15 @@
+# Build context of packaging/Dockerfile: web/, src/, pom.xml, the Maven wrapper, packaging/ and LICENSE.
+.git
+.github
+.idea
+.vscode
+Local
+site
+docker
+target
+build
+**/node_modules
+**/dist
+*.log
+.env
+*.md

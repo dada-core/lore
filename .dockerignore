@@ -1,0 +1,15 @@
+# Only what the image build needs: web/, src/, pom.xml, the Maven wrapper and docker/.
+.git
+.github
+.idea
+.vscode
+Local
+site
+target
+build
+packaging
+**/node_modules
+**/dist
+*.log
+.env
+*.md

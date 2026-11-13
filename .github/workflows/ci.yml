@@ -1,0 +1,300 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Whether anything changed since the base: the application is checked when it does. The website and the
+  # documentation have their own repository, dada-core/lore-site. The "Checks" job at the end is the one
+  # the branch requires.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE" HEAD)
+          echo "$files"
+          if [ -n "$files" ]; then echo "app=true" >> "$GITHUB_OUTPUT"; else echo "app=false" >> "$GITHUB_OUTPUT"; fi
+
+  server:
+    name: Server (Java 21, PostgreSQL)
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Tests, on a real PostgreSQL (Testcontainers)
+        run: ./mvnw -B verify
+        env:
+          LORE_OPENAPI_OUTPUT: ${{ github.workspace }}/web/openapi.json
+      - name: The committed API description matches the code
+        run: |
+          git diff --exit-code -- web/openapi.json || {
+            echo "::error::web/openapi.json is out of date: run 'npm run api' in web/ and commit the result."
+            exit 1
+          }
+
+  web:
+    name: Interface
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: The TypeScript types match the API description
+        run: |
+          npm run api:types
+          git diff --exit-code -- src/api/schema.d.ts || {
+            echo "::error::src/api/schema.d.ts is out of date: run 'npm run api' in web/ and commit the result."
+            exit 1
+          }
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  install:
+    name: Installation with Docker Compose
+    needs: [server, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Lore and PostgreSQL
+        run: |
+          echo "DB_PASSWORD=ci-$(openssl rand -hex 16)" > .env
+          docker compose up -d --build --wait --wait-timeout 300
+      - name: A fresh installation asks for the initial setup
+        run: |
+          curl -fsS http://localhost:8080/api/v1/session | tee session.json
+          grep -q '"setupRequired":true' session.json
+          curl -fsS http://localhost:8080/login | grep -q '<div id="root">'
+          docker compose logs lore | grep -q "setup code"
+      - name: The server command answers
+        run: docker compose exec -T lore lore help
+      - name: Logs
+        if: failure()
+        run: docker compose logs
+
+  # The universal archive and the .deb and .rpm packages, built on each architecture: the Java
+  # runtime the packages bundle is made with jlink on the architecture that runs it.
+  packages:
+    name: Packages (${{ matrix.arch }})
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Interface and application
+        run: |
+          npm ci --prefix web --no-audit --no-fund
+          npm run build --prefix web
+          ./mvnw -B -q -DskipTests package
+      - name: Archive, Java runtime and packages
+        run: |
+          sh packaging/package.sh archive
+          sh packaging/package.sh runtime
+          sh packaging/package.sh packages ${{ matrix.arch }}
+      - name: The archive starts with a plain Java 21
+        run: |
+          docker run -d --name db -p 5432:5432 -e POSTGRES_PASSWORD=postgres-test postgres:18-alpine
+          until docker exec db pg_isready -h 127.0.0.1 >/dev/null 2>&1; do sleep 1; done
+          sleep 2
+          docker exec db psql -U postgres -q -c "create role lore login password 'lore-test'" -c "create database lore owner lore"
+          mkdir -p "$RUNNER_TEMP/archive"
+          tar xzf build/dist/lore-*.tar.gz -C "$RUNNER_TEMP/archive"
+          cd "$RUNNER_TEMP"/archive/lore-*
+          sed 's/^LORE_DB_PASSWORD=.*/LORE_DB_PASSWORD=lore-test/' conf/lore.env.example > conf/lore.env
+          bin/lore help | grep -q reset-password
+          bin/lore > "$RUNNER_TEMP/archive.log" 2>&1 &
+          for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
+          curl -fsS localhost:8080/actuator/health/readiness | grep -q '"UP"'
+          grep -q "setup code" "$RUNNER_TEMP/archive.log"
+      - name: Logs
+        if: failure()
+        run: cat "$RUNNER_TEMP/archive.log" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.arch }}
+          path: build/dist/
+          retention-days: 3
+
+  # Each package installed, started and removed on every supported release, in containers.
+  packages-test:
+    name: Package on ${{ matrix.image }} (${{ matrix.arch }})
+    needs: packages
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64]
+        image:
+          - ubuntu:22.04
+          - ubuntu:24.04
+          - ubuntu:26.04
+          - debian:12
+          - debian:13
+          - almalinux:8
+          - almalinux:9
+          - almalinux:10
+          - rockylinux/rockylinux:8
+          - rockylinux/rockylinux:9
+          - rockylinux/rockylinux:10
+          - registry.access.redhat.com/ubi8/ubi
+          - registry.access.redhat.com/ubi9/ubi
+          - registry.access.redhat.com/ubi10/ubi
+        include:
+          - arch: arm64
+            image: ubuntu:22.04
+          - arch: arm64
+            image: debian:13
+          - arch: arm64
+            image: almalinux:8
+          - arch: arm64
+            image: almalinux:10
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-${{ matrix.arch }}
+          path: build/dist
+      - name: PostgreSQL 18
+        run: |
+          docker network create lore
+          docker run -d --name db --network lore -e POSTGRES_PASSWORD=postgres-test postgres:18-alpine
+          until docker exec db pg_isready -h 127.0.0.1 >/dev/null 2>&1; do sleep 1; done
+          sleep 2
+          docker exec db psql -U postgres -q -c "create role lore login password 'lore-test'" -c "create database lore owner lore"
+      - name: Install, start and remove the package
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          case "$IMAGE" in
+            *ubuntu* | *debian*) package=$(cd build/dist && ls ./*.deb) ;;
+            *) package=$(cd build/dist && ls ./*.rpm) ;;
+          esac
+          docker run --rm --network lore --entrypoint sh \
+            -v "$PWD/build/dist:/dist:ro" -v "$PWD/packaging:/packaging:ro" \
+            "$IMAGE" /packaging/test.sh "/dist/${package#./}" db
+
+  # The .deb as a real systemd service, with the upgrade and the removal.
+  packages-systemd:
+    name: Package as a service on ${{ matrix.runner }}
+    needs: packages
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: amd64
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-${{ matrix.arch }}
+          path: build/dist
+      - name: PostgreSQL 18, on the default port
+        run: |
+          docker run -d --name db -p 5432:5432 -e POSTGRES_PASSWORD=postgres-test postgres:18-alpine
+          until docker exec db pg_isready -h 127.0.0.1 >/dev/null 2>&1; do sleep 1; done
+          sleep 2
+          docker exec db psql -U postgres -q -c "create role lore login password 'lore-test'" -c "create database lore owner lore"
+      - name: Install the package and start the service
+        run: |
+          sudo apt-get install -y ./build/dist/lore_*_${{ matrix.arch }}.deb
+          sudo sed -i 's/^LORE_DB_PASSWORD=.*/LORE_DB_PASSWORD=lore-test/' /etc/lore/lore.env
+          sudo systemctl enable --now lore
+          for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
+          curl -fsS localhost:8080/actuator/health/readiness | grep -q '"UP"'
+      - name: A fresh installation asks for the setup, the lore command answers
+        run: |
+          curl -fsS localhost:8080/api/v1/session | grep -q '"setupRequired":true'
+          sudo journalctl -u lore --no-pager | grep -q "setup code"
+          [ "$(ps -o user= -p "$(systemctl show -p MainPID --value lore)")" = lore ]
+          sudo lore help | grep -q reset-password
+          systemd-analyze verify /usr/lib/systemd/system/lore.service
+      - name: An upgrade restarts the service, a removal keeps the data
+        run: |
+          before=$(systemctl show -p MainPID --value lore)
+          sudo apt-get install -y --reinstall ./build/dist/lore_*_${{ matrix.arch }}.deb
+          [ "$(systemctl show -p MainPID --value lore)" != "$before" ]
+          systemctl is-active --quiet lore
+          sudo apt-get remove -y lore
+          [ ! -e /opt/lore ]
+          [ -d /var/lib/lore/files ]
+          if systemctl is-active --quiet lore; then exit 1; fi
+      - name: Logs
+        if: failure()
+        run: sudo journalctl -u lore --no-pager | tail -n 100
+
+  # The single status the branch protection requires: green when every job that had to run passed.
+  checks:
+    name: Checks
+    if: always()
+    needs: [changes, server, web, install, packages, packages-test, packages-systemd]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every required job passed or was not needed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac

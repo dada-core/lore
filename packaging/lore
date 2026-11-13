@@ -1,0 +1,54 @@
+#!/bin/sh
+# Lore launcher, in the universal archive (bin/lore) and in the packages (/usr/bin/lore).
+#   lore                          starts Lore in the foreground
+#   lore help                     lists the administration commands
+#   lore reset-password <e-mail>  runs an administration command, then stops
+# Settings: conf/lore.env next to bin/ (in the packages, /etc/lore/lore.env), or the file named
+# by LORE_ENV_FILE. Java: the runtime bundled with the packages, else JAVA_HOME, else java.
+set -eu
+
+self=$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")
+home=$(cd "$(dirname "$self")/.." && pwd)
+
+# Packages: commands run with sudo continue as the lore user, who can read the settings.
+if [ -d "$home/runtime" ] && [ "$(id -u)" -eq 0 ] && id lore >/dev/null 2>&1; then
+  exec runuser -u lore -- "$self" "$@"
+fi
+
+env_file=${LORE_ENV_FILE:-$home/conf/lore.env}
+if [ -r "$env_file" ]; then
+  set -a
+  # shellcheck disable=SC1090 # the settings file is chosen at run time
+  . "$env_file"
+  set +a
+elif [ -e "$env_file" ]; then
+  echo "lore: cannot read $env_file: run the command with sudo." >&2
+  exit 1
+fi
+
+if [ -x "$home/runtime/bin/java" ]; then
+  java=$home/runtime/bin/java
+elif [ -n "${JAVA_HOME:-}" ]; then
+  java=$JAVA_HOME/bin/java
+else
+  java=java
+fi
+version=$("$java" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java\.specification\.version = //p') || true
+case ${version:-0} in
+  2[1-9] | [3-9][0-9]) ;;
+  *)
+    echo "lore: Java 21 or later is required (found: ${version:-none}). Install it, or set JAVA_HOME." >&2
+    exit 1
+    ;;
+esac
+
+jar=$home/lib/lore.jar
+case ${1:-} in
+  '' | --*)
+    # shellcheck disable=SC2086 # LORE_JAVA_OPTS holds several options
+    exec "$java" ${LORE_JAVA_OPTS:--XX:MaxRAMPercentage=25} -jar "$jar" "$@"
+    ;;
+  *)
+    exec "$java" -XX:MaxRAMPercentage=25 -XX:TieredStopAtLevel=1 -jar "$jar" "$@"
+    ;;
+esac
