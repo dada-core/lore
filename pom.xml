@@ -13,7 +13,7 @@
 
     <groupId>com.dadacore</groupId>
     <artifactId>lore</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0-alpha.1</version>
     <name>Lore</name>
     <description>Technical knowledge workspace</description>
     <url>https://lore.dada-core.com</url>
