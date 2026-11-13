@@ -1,0 +1,12 @@
+# Local development: ./mvnw spring-boot:run (this profile is enabled by the Maven plugin).
+# Database: docker compose -f compose.dev.yml up -d postgres
+
+lore:
+  db:
+    host: localhost
+    port: 5433
+    password: lore
+  # The interface runs on the Vite development server (npm run dev in web/).
+  public-url: http://localhost:5173
+  setup-code: dev-setup-code
+  log-level: INFO

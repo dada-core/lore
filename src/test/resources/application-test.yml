@@ -1,0 +1,8 @@
+lore:
+  setup-code: test-setup-code
+  log-level: WARN
+
+spring:
+  session:
+    jdbc:
+      cleanup-cron: "-"

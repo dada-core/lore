@@ -1,0 +1,72 @@
+# Lore is configured with LORE_* environment variables:
+# see the "Environment variables" page of the documentation.
+
+lore:
+  db:
+    host: postgres
+    port: 5432
+    name: lore
+    user: lore
+    password: ""
+  session-timeout: 8h
+  log-level: INFO
+
+spring:
+  application:
+    name: lore
+  datasource:
+    url: jdbc:postgresql://${lore.db.host}:${lore.db.port}/${lore.db.name}
+    username: ${lore.db.user}
+    password: ${lore.db.password}
+    hikari:
+      maximum-pool-size: 10
+  flyway:
+    locations: classpath:db/migration
+    # A file named V4_identity.sql (one underscore) would otherwise be skipped without a word.
+    validate-migration-naming: true
+  session:
+    timeout: ${lore.session-timeout}
+    jdbc:
+      initialize-schema: never
+      table-name: spring_session
+      cleanup-cron: "0 * * * * *"
+  web:
+    resources:
+      # The interface is served by SpaConfiguration.
+      add-mappings: false
+
+server:
+  # LORE_PORT, for the packages and the archive; with Docker, change the published port instead.
+  port: ${LORE_PORT:8080}
+  # Trusts X-Forwarded-* headers from a reverse proxy on the internal network.
+  forward-headers-strategy: native
+  servlet:
+    session:
+      timeout: ${lore.session-timeout}
+  compression:
+    enabled: true
+  error:
+    whitelabel:
+      enabled: false
+  shutdown: graceful
+
+springdoc:
+  api-docs:
+    path: /api/v1/openapi.json
+  paths-to-match: /api/**
+  default-produces-media-type: application/json
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  level:
+    root: ${lore.log-level}
