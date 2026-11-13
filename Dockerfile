@@ -12,7 +12,7 @@ COPY web/ ./
 RUN npm run build
 
 # ---- Application ----
-FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS app
+FROM --platform=$BUILDPLATFORM eclipse-temurin:24-jdk AS app
 # The Maven wrapper checks the SHA-256 of the .zip distribution; without unzip it would fetch the .tar.gz.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends unzip \
@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package \
     && cp target/lore.jar /build/lore.jar
 
 # ---- Runtime ----
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:24-jre
 RUN groupadd --system lore \
     && useradd --system --gid lore --home-dir /var/lib/lore --shell /usr/sbin/nologin lore \
     && mkdir -p /var/lib/lore/files \
