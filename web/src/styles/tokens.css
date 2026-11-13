@@ -1,0 +1,75 @@
+/* Lore: design tokens, from the validated mockup.
+   Structure, density and keyboard in the manner of Linear; grids and coloured labels in the manner
+   of Airtable. Light and dark themes; "system" follows the operating system. */
+
+:root {
+  --bg: #FFFFFF; --bg-side: #F7F7F8; --bg-subtle: #F8F8FA; --bg-hover: #F0F0F3; --bg-active: #E8E8ED; --bg-raised: #FFFFFF;
+  --border: #E6E6EA; --border-strong: #D6D7DC;
+  --text: #1B1C20; --text-2: #585B63; --text-3: #6B6F77;
+  --accent: #5B5FD6; --accent-hover: #4A4EC2; --accent-soft: #EEEEFD; --accent-ink: #FFFFFF; --accent-text: #4549BE;
+  --ok: #1F8A5B;
+  --danger: #C4382F; --danger-bg: #FFF1F0; --danger-border: #F2C4C0;
+  --warn-bg: #FFF7E3; --warn-border: #F0D48C; --warn-text: #734E00;
+  --info-bg: #F1F1FE; --info-border: #D5D6F7;
+  --s2: #6B6F78; --s3: #A0A4AC;
+  --shadow-sm: 0 1px 2px rgba(16, 17, 20, .05);
+  --shadow-lg: 0 16px 40px rgba(16, 17, 20, .16), 0 2px 6px rgba(16, 17, 20, .06);
+  --scrim: rgba(16, 17, 20, .28);
+
+  --p-blue-bg: #DEE8FF; --p-blue: #1C4AA3;
+  --p-green-bg: #E0F4D6; --p-green: #2D6619;
+  --p-yellow-bg: #FFF0C4; --p-yellow: #704C00;
+  --p-orange-bg: #FFE4D3; --p-orange: #8E3D0D;
+  --p-purple-bg: #ECE5FF; --p-purple: #5532AE;
+  --p-gray-bg: #EDEEF0; --p-gray: #44484F;
+
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111215; --bg-side: #0C0D0F; --bg-subtle: #16171A; --bg-hover: #1B1C20; --bg-active: #232429; --bg-raised: #17181C;
+    --border: #222327; --border-strong: #2E2F35;
+    --text: #ECEDEF; --text-2: #A4A7AE; --text-3: #8C9098;
+    --accent: #7F83F2; --accent-hover: #959AF6; --accent-soft: #22244A; --accent-ink: #0D0E1F; --accent-text: #A3A6F8;
+    --ok: #3DBE84;
+    --danger: #F0776E; --danger-bg: #2C1715; --danger-border: #5C2A26;
+    --warn-bg: #2A2312; --warn-border: #5A4718; --warn-text: #F1CF7A;
+    --info-bg: #1C1D38; --info-border: #33356A;
+    --s2: #3D4048; --s3: #5D616A;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .04);
+    --scrim: rgba(0, 0, 0, .55);
+    --p-blue-bg: rgba(84, 134, 255, .18); --p-blue: #AFC6FF;
+    --p-green-bg: rgba(110, 190, 70, .17); --p-green: #B9E6A1;
+    --p-yellow-bg: rgba(230, 180, 40, .17); --p-yellow: #F3D684;
+    --p-orange-bg: rgba(240, 130, 60, .18); --p-orange: #FBBE96;
+    --p-purple-bg: rgba(140, 100, 255, .2); --p-purple: #CDBDFF;
+    --p-gray-bg: rgba(150, 155, 165, .16); --p-gray: #C9CCD2;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #111215; --bg-side: #0C0D0F; --bg-subtle: #16171A; --bg-hover: #1B1C20; --bg-active: #232429; --bg-raised: #17181C;
+  --border: #222327; --border-strong: #2E2F35;
+  --text: #ECEDEF; --text-2: #A4A7AE; --text-3: #8C9098;
+  --accent: #7F83F2; --accent-hover: #959AF6; --accent-soft: #22244A; --accent-ink: #0D0E1F; --accent-text: #A3A6F8;
+  --ok: #3DBE84;
+  --danger: #F0776E; --danger-bg: #2C1715; --danger-border: #5C2A26;
+  --warn-bg: #2A2312; --warn-border: #5A4718; --warn-text: #F1CF7A;
+  --info-bg: #1C1D38; --info-border: #33356A;
+  --s2: #3D4048; --s3: #5D616A;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .04);
+  --scrim: rgba(0, 0, 0, .55);
+  --p-blue-bg: rgba(84, 134, 255, .18); --p-blue: #AFC6FF;
+  --p-green-bg: rgba(110, 190, 70, .17); --p-green: #B9E6A1;
+  --p-yellow-bg: rgba(230, 180, 40, .17); --p-yellow: #F3D684;
+  --p-orange-bg: rgba(240, 130, 60, .18); --p-orange: #FBBE96;
+  --p-purple-bg: rgba(140, 100, 255, .2); --p-purple: #CDBDFF;
+  --p-gray-bg: rgba(150, 155, 165, .16); --p-gray: #C9CCD2;
+  color-scheme: dark;
+}

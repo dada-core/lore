@@ -1,0 +1,1263 @@
+{
+  "components" : {
+    "schemas" : {
+      "AccountView" : {
+        "properties" : {
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "interfaceLocale" : {
+            "type" : "string"
+          },
+          "locale" : {
+            "type" : [ "string", "null" ]
+          },
+          "passwordMinLength" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "role" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "displayName", "email", "interfaceLocale", "passwordMinLength", "role" ],
+        "type" : "object"
+      },
+      "CompleteRequest" : {
+        "properties" : {
+          "password" : {
+            "type" : "string"
+          },
+          "token" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "password", "token" ],
+        "type" : "object"
+      },
+      "CreatedInvitation" : {
+        "properties" : {
+          "invitation" : {
+            "$ref" : "#/components/schemas/InvitationView"
+          },
+          "url" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "invitation", "url" ],
+        "type" : "object"
+      },
+      "CreatedLink" : {
+        "properties" : {
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "url" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "expiresAt", "url" ],
+        "type" : "object"
+      },
+      "CurrentUser" : {
+        "properties" : {
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "locale" : {
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "displayName", "email", "id", "locale", "role" ],
+        "type" : "object"
+      },
+      "EmailChange" : {
+        "properties" : {
+          "currentPassword" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "currentPassword", "email" ],
+        "type" : "object"
+      },
+      "InspectRequest" : {
+        "properties" : {
+          "token" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "token" ],
+        "type" : "object"
+      },
+      "InvitationDetails" : {
+        "properties" : {
+          "email" : {
+            "type" : [ "string", "null" ]
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "invitedBy" : {
+            "type" : [ "string", "null" ]
+          },
+          "organizationName" : {
+            "type" : "string"
+          },
+          "passwordMinLength" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "role" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "expiresAt", "organizationName", "passwordMinLength", "role" ],
+        "type" : "object"
+      },
+      "InvitationView" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "createdBy" : {
+            "type" : [ "string", "null" ]
+          },
+          "email" : {
+            "type" : [ "string", "null" ]
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "createdAt", "expiresAt", "id", "role" ],
+        "type" : "object"
+      },
+      "JoinRequest" : {
+        "properties" : {
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "password" : {
+            "type" : "string"
+          },
+          "token" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "displayName", "email", "password", "token" ],
+        "type" : "object"
+      },
+      "LoginRequest" : {
+        "properties" : {
+          "email" : {
+            "type" : "string"
+          },
+          "password" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "email", "password" ],
+        "type" : "object"
+      },
+      "MemberView" : {
+        "properties" : {
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "joinedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "lastLoginAt" : {
+            "format" : "date-time",
+            "type" : [ "string", "null" ]
+          },
+          "manageable" : {
+            "type" : "boolean"
+          },
+          "role" : {
+            "type" : "string"
+          },
+          "self" : {
+            "type" : "boolean"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "displayName", "email", "id", "joinedAt", "manageable", "role", "self", "status" ],
+        "type" : "object"
+      },
+      "NewInvitation" : {
+        "properties" : {
+          "email" : {
+            "type" : [ "string", "null" ]
+          },
+          "role" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "role" ],
+        "type" : "object"
+      },
+      "OpenSession" : {
+        "properties" : {
+          "browser" : {
+            "type" : [ "string", "null" ]
+          },
+          "current" : {
+            "type" : "boolean"
+          },
+          "id" : {
+            "type" : "string"
+          },
+          "ip" : {
+            "type" : [ "string", "null" ]
+          },
+          "lastActiveAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "signedInAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "system" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "current", "id", "lastActiveAt", "signedInAt" ],
+        "type" : "object"
+      },
+      "OrganizationSummary" : {
+        "properties" : {
+          "defaultLocale" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "timeZone" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "defaultLocale", "name", "timeZone" ],
+        "type" : "object"
+      },
+      "PageResponseMemberView" : {
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/MemberView"
+            },
+            "type" : "array"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "items", "page", "size", "total" ],
+        "type" : "object"
+      },
+      "PasswordChange" : {
+        "properties" : {
+          "currentPassword" : {
+            "type" : "string"
+          },
+          "newPassword" : {
+            "type" : "string"
+          },
+          "signOutOtherSessions" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "currentPassword", "newPassword", "signOutOtherSessions" ],
+        "type" : "object"
+      },
+      "ProfileUpdate" : {
+        "properties" : {
+          "displayName" : {
+            "type" : [ "string", "null" ]
+          },
+          "locale" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "type" : "object"
+      },
+      "ResetDetails" : {
+        "properties" : {
+          "createdBy" : {
+            "type" : [ "string", "null" ]
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "passwordMinLength" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "displayName", "email", "expiresAt", "passwordMinLength" ],
+        "type" : "object"
+      },
+      "RoleChange" : {
+        "properties" : {
+          "role" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "role" ],
+        "type" : "object"
+      },
+      "SessionInfo" : {
+        "properties" : {
+          "organization" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/OrganizationSummary"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "setupRequired" : {
+            "type" : "boolean"
+          },
+          "user" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/CurrentUser"
+            }, {
+              "type" : "null"
+            } ]
+          }
+        },
+        "required" : [ "setupRequired" ],
+        "type" : "object"
+      },
+      "SettingsUpdate" : {
+        "properties" : {
+          "defaultLocale" : {
+            "type" : [ "string", "null" ]
+          },
+          "invitationValidityHours" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "loginLockoutMinutes" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "loginMaxAttempts" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "name" : {
+            "type" : [ "string", "null" ]
+          },
+          "passwordMinLength" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "publicUrl" : {
+            "type" : [ "string", "null" ]
+          },
+          "sessionTimeoutMinutes" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "timeZone" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "type" : "object"
+      },
+      "SettingsView" : {
+        "properties" : {
+          "defaultLocale" : {
+            "type" : "string"
+          },
+          "invitationValidityHours" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "loginLockoutMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "loginMaxAttempts" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "passwordMinLength" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "publicUrl" : {
+            "type" : "string"
+          },
+          "publicUrlFromEnvironment" : {
+            "type" : "boolean"
+          },
+          "sessionTimeoutMaxMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sessionTimeoutMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "timeZone" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "defaultLocale", "invitationValidityHours", "loginLockoutMinutes", "loginMaxAttempts", "name", "passwordMinLength", "publicUrl", "publicUrlFromEnvironment", "sessionTimeoutMaxMinutes", "sessionTimeoutMinutes", "slug", "timeZone" ],
+        "type" : "object"
+      },
+      "SetupRequest" : {
+        "properties" : {
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "locale" : {
+            "type" : [ "string", "null" ]
+          },
+          "organizationName" : {
+            "type" : "string"
+          },
+          "password" : {
+            "type" : "string"
+          },
+          "publicUrl" : {
+            "type" : [ "string", "null" ]
+          },
+          "setupCode" : {
+            "type" : "string"
+          },
+          "timeZone" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "displayName", "email", "organizationName", "password", "setupCode" ],
+        "type" : "object"
+      },
+      "SetupStatus" : {
+        "properties" : {
+          "publicUrl" : {
+            "type" : [ "string", "null" ]
+          },
+          "publicUrlFromEnvironment" : {
+            "type" : "boolean"
+          },
+          "required" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "publicUrlFromEnvironment", "required" ],
+        "type" : "object"
+      },
+      "VerifyCodeRequest" : {
+        "properties" : {
+          "setupCode" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "setupCode" ],
+        "type" : "object"
+      }
+    }
+  },
+  "info" : {
+    "description" : "Every action of the Lore interface goes through this API.",
+    "license" : {
+      "name" : "AGPL-3.0",
+      "url" : "https://www.gnu.org/licenses/agpl-3.0.html"
+    },
+    "title" : "Lore API",
+    "version" : "v1"
+  },
+  "openapi" : "3.1.0",
+  "paths" : {
+    "/api/v1/account" : {
+      "get" : {
+        "operationId" : "get_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccountView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Profile and preferences of the signed-in person",
+        "tags" : [ "My account" ]
+      },
+      "patch" : {
+        "operationId" : "updateProfile",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ProfileUpdate"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccountView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Change the name or the interface language",
+        "tags" : [ "My account" ]
+      }
+    },
+    "/api/v1/account/email" : {
+      "put" : {
+        "operationId" : "changeEmail",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/EmailChange"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccountView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Change the sign-in address (current password required)",
+        "tags" : [ "My account" ]
+      }
+    },
+    "/api/v1/account/password" : {
+      "put" : {
+        "operationId" : "changePassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "format" : "int32",
+                    "type" : "integer"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Change the password",
+        "tags" : [ "My account" ]
+      }
+    },
+    "/api/v1/account/sessions" : {
+      "get" : {
+        "operationId" : "sessions",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/OpenSession"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Open sessions of the signed-in person",
+        "tags" : [ "My account" ]
+      }
+    },
+    "/api/v1/account/sessions/sign-out-others" : {
+      "post" : {
+        "operationId" : "closeOtherSessions",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "format" : "int32",
+                    "type" : "integer"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Sign out every other session",
+        "tags" : [ "My account" ]
+      }
+    },
+    "/api/v1/account/sessions/{id}" : {
+      "delete" : {
+        "operationId" : "closeSession",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Sign out one session",
+        "tags" : [ "My account" ]
+      }
+    },
+    "/api/v1/admin/invitations" : {
+      "get" : {
+        "operationId" : "pending",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/InvitationView"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Invitations neither used, revoked nor expired",
+        "tags" : [ "Administration" ]
+      },
+      "post" : {
+        "operationId" : "create",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/NewInvitation"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreatedInvitation"
+                }
+              }
+            },
+            "description" : "Created"
+          }
+        },
+        "summary" : "Create an invitation link",
+        "tags" : [ "Administration" ]
+      }
+    },
+    "/api/v1/admin/invitations/{id}" : {
+      "delete" : {
+        "operationId" : "revoke",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Revoke an invitation link",
+        "tags" : [ "Administration" ]
+      }
+    },
+    "/api/v1/admin/members" : {
+      "get" : {
+        "operationId" : "list",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "q",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageResponseMemberView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Members of the organization, by name; q searches names and addresses",
+        "tags" : [ "Administration" ]
+      }
+    },
+    "/api/v1/admin/members/{id}" : {
+      "delete" : {
+        "operationId" : "remove",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Remove a member from the organization",
+        "tags" : [ "Administration" ]
+      },
+      "patch" : {
+        "operationId" : "changeRole",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RoleChange"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MemberView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Change the role of a member",
+        "tags" : [ "Administration" ]
+      }
+    },
+    "/api/v1/admin/members/{id}/disable" : {
+      "post" : {
+        "operationId" : "disable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MemberView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Disable an account: it can no longer sign in, its sessions are closed",
+        "tags" : [ "Administration" ]
+      }
+    },
+    "/api/v1/admin/members/{id}/enable" : {
+      "post" : {
+        "operationId" : "enable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MemberView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Enable a disabled account again",
+        "tags" : [ "Administration" ]
+      }
+    },
+    "/api/v1/admin/members/{id}/password-reset-link" : {
+      "post" : {
+        "operationId" : "resetLink",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreatedLink"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Generate a password reset link, valid 24 hours, once",
+        "tags" : [ "Administration" ]
+      }
+    },
+    "/api/v1/admin/organization" : {
+      "get" : {
+        "operationId" : "get",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SettingsView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Settings of the organization",
+        "tags" : [ "Administration" ]
+      },
+      "patch" : {
+        "operationId" : "update",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SettingsUpdate"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SettingsView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Change settings of the organization",
+        "tags" : [ "Administration" ]
+      }
+    },
+    "/api/v1/auth/login" : {
+      "post" : {
+        "operationId" : "login",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionInfo"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Sign in with an e-mail address and a password",
+        "tags" : [ "Session" ]
+      }
+    },
+    "/api/v1/auth/logout" : {
+      "post" : {
+        "operationId" : "logout",
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Sign out: the session is deleted on the server",
+        "tags" : [ "Session" ]
+      }
+    },
+    "/api/v1/invitations/accept" : {
+      "post" : {
+        "operationId" : "accept",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/JoinRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionInfo"
+                }
+              }
+            },
+            "description" : "Created"
+          }
+        },
+        "summary" : "Create an account from an invitation link and sign in",
+        "tags" : [ "Invitations" ]
+      }
+    },
+    "/api/v1/invitations/inspect" : {
+      "post" : {
+        "operationId" : "inspect_1",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/InspectRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/InvitationDetails"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Organization, author and role of an invitation link",
+        "tags" : [ "Invitations" ]
+      }
+    },
+    "/api/v1/password-reset/complete" : {
+      "post" : {
+        "operationId" : "complete",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CompleteRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionInfo"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Choose a new password and sign in",
+        "tags" : [ "Password reset" ]
+      }
+    },
+    "/api/v1/password-reset/inspect" : {
+      "post" : {
+        "operationId" : "inspect",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/InspectRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResetDetails"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Account and author of a reset link",
+        "tags" : [ "Password reset" ]
+      }
+    },
+    "/api/v1/session" : {
+      "get" : {
+        "operationId" : "session",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionInfo"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Installation state and signed-in person",
+        "tags" : [ "Session" ]
+      }
+    },
+    "/api/v1/setup" : {
+      "get" : {
+        "operationId" : "status",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SetupStatus"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Is the initial setup still to be done",
+        "tags" : [ "Initial setup" ]
+      },
+      "post" : {
+        "operationId" : "setup",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionInfo"
+                }
+              }
+            },
+            "description" : "Created"
+          }
+        },
+        "summary" : "Create the organization and the first administrator account",
+        "tags" : [ "Initial setup" ]
+      }
+    },
+    "/api/v1/setup/verify-code" : {
+      "post" : {
+        "operationId" : "verifyCode",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VerifyCodeRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Check the setup code printed in the server logs",
+        "tags" : [ "Initial setup" ]
+      }
+    }
+  },
+  "servers" : [ {
+    "description" : "Generated server url",
+    "url" : "http://localhost:51902"
+  } ]
+}
