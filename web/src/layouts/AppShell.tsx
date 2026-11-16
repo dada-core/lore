@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { createContext, Fragment, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate, useSearchParams } from 'react-router';
+import { useOpenImport } from '../documents/documents';
+import { ImportDialog } from '../documents/ImportDialog';
 import { useI18n } from '../i18n/i18n';
 import { signOut, useSession, useUser } from '../session/session';
 import { CreateSpaceDialog } from '../spaces/CreateSpaceDialog';
-import { SpaceIcon, spaceBySlug, useCreateSpace, useSpaces } from '../spaces/spaces';
+import { canContribute, SpaceIcon, spaceBySlug, useCreateSpace, useSpaces } from '../spaces/spaces';
 import { Avatar, initials, useVerticalFade } from '../ui/bits';
 import { Icon, type IconName } from '../ui/Icon';
 import { Menu, MenuItem, MenuLink, MenuSeparator } from '../ui/Menu';
@@ -34,6 +36,12 @@ export function AppShell() {
   // The drawer of small screens belongs to the view it was opened on: a new view closes it.
   const [drawerPath, setDrawerPath] = useState<string | null>(null);
   const drawerOpen = drawerPath === pathname;
+  const spaces = useSpaces();
+  const openImport = useOpenImport();
+  // Importing takes a space where the person contributes, active: the one shown, or one to choose.
+  const shownSpace = useMatch('/spaces/:slug/*')?.params.slug;
+  const importable = (spaces.data ?? []).filter(canContribute);
+  const canImport = shownSpace ? importable.some((space) => space.slug === shownSpace) : importable.length > 0;
   const setDrawerOpen = useCallback((open: boolean) => setDrawerPath(open ? pathname : null), [pathname]);
 
   const showNavigation = useCallback(() => {
@@ -69,10 +77,24 @@ export function AppShell() {
     return () => document.removeEventListener('keydown', onKey);
   }, [drawerOpen, setDrawerOpen, toggleNav]);
 
-  // "Create a space" opens from the sidebar, the home page and the list of spaces.
-  const creatingSpace = params.get('open') === 'create-space';
-  const closeCreateSpace = () => {
-    if ((state as { createSpace?: boolean } | null)?.createSpace) {
+  // I: "Import documents", where the person may import, outside a field and a window.
+  useEffect(() => {
+    if (!canImport) return;
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.key !== 'i' && event.key !== 'I') || event.ctrlKey || event.metaKey || event.altKey || isTyping()) return;
+      if (document.querySelector('dialog[open]')) return;
+      event.preventDefault();
+      openImport();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [canImport, openImport]);
+
+  // "Create a space" opens from the sidebar, the home page and the list of spaces; "Import
+  // documents" from the home page, a library and the I key.
+  const opened = params.get('open');
+  const closeWindow = (flag: 'createSpace' | 'importing') => {
+    if ((state as Record<string, boolean> | null)?.[flag]) {
       navigate(-1);
       return;
     }
@@ -92,7 +114,8 @@ export function AppShell() {
           <Outlet />
         </div>
       </div>
-      {creatingSpace && <CreateSpaceDialog onClose={closeCreateSpace} />}
+      {opened === 'create-space' && <CreateSpaceDialog onClose={() => closeWindow('createSpace')} />}
+      {opened === 'import' && <ImportDialog slug={shownSpace} onClose={() => closeWindow('importing')} />}
     </ShellContext>
   );
 }
@@ -275,12 +298,12 @@ export function View({ crumbs, actions, children }: { crumbs: Crumb[]; actions?:
         <nav className="crumbs" aria-label={t('nav.breadcrumb')}>
           {crumbs.map((crumb, index) =>
             index < crumbs.length - 1 && crumb.to ? (
-              <Fragment key={crumb.label}>
+              <Fragment key={index}>
                 <Link to={crumb.to}>{crumb.label}</Link>
                 <span className="sep" aria-hidden="true">›</span>
               </Fragment>
             ) : (
-              <span key={crumb.label} className="current" aria-current="page">{crumb.label}</span>
+              <span key={index} className="current" aria-current={index === crumbs.length - 1 ? 'page' : undefined}>{crumb.label}</span>
             ),
           )}
         </nav>

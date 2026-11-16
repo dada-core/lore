@@ -40,12 +40,13 @@ export function SpacesPage() {
           {spaces.isError && <Callout tone="error" role="alert">{errorMessage(i18n, spaces.error)}</Callout>}
           <div className="set-box is-flush">
             <HorizontalScroll stickyFirstColumn>
-              <table className="grid" style={{ minWidth: 760 }}>
+              <table className="grid" style={{ minWidth: 860 }}>
                 <thead>
                   <tr>
                     <th className="rn"><span className="sr-only">#</span></th>
                     <th className="primary"><span className="th"><Icon name="grid" />{t('spaces.col.name')}</span></th>
                     <th><span className="th"><Icon name="file-text" />{t('spaces.col.description')}</span></th>
+                    <th><span className="th"><Icon name="file-text" />{t('spaces.col.documents')}</span></th>
                     <th><span className="th"><Icon name="users" />{t('spaces.col.members')}</span></th>
                     <th><span className="th"><Icon name="tag" />{t('spaces.col.role')}</span></th>
                     <th><span className="th"><Icon name="clock" />{t('spaces.col.activity')}</span></th>
@@ -64,6 +65,7 @@ export function SpacesPage() {
                       <td style={{ maxWidth: 320 }} title={space.description ?? undefined}>
                         {space.description ?? <span className="muted">{t('spaces.noDescription')}</span>}
                       </td>
+                      <td className="num">{space.documentCount}</td>
                       <td className="num">{space.memberCount}</td>
                       <td><SpaceRolePill role={space.role} /></td>
                       <td>{i18n.relative(space.lastActivityAt)}</td>

@@ -1,8 +1,9 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api, ApiError, call, type Schemas } from '../api/client';
 import { keys, queryClient } from '../api/queryClient';
+import { FormatIcon, Owner, refreshAllDocuments } from '../documents/documents';
 import { errorMessage } from '../i18n/errors';
 import { useI18n } from '../i18n/i18n';
 import { View } from '../layouts/AppShell';
@@ -43,6 +44,8 @@ export function SpaceMembersPage() {
     void queryClient.invalidateQueries({ queryKey: keys.spaceMembers(space.id) });
     void queryClient.invalidateQueries({ queryKey: keys.allSpaceCandidates(space.id) });
     void refreshSpaces();
+    // Who sees which document, and who may be chosen for one, change with the members.
+    void refreshAllDocuments();
   };
 
   const changeRole = useMutation({
@@ -174,6 +177,8 @@ export function SpaceMembersPage() {
             </dl>
             <p className="help" style={{ marginTop: 10 }}>{t('spaceMembers.adminsHelp')}</p>
           </section>
+
+          {canManage(space) && <RestrictedDocuments space={space} />}
         </div>
       </div>
 
@@ -194,6 +199,71 @@ export function SpaceMembersPage() {
         />
       )}
     </View>
+  );
+}
+
+/**
+ * For the maintainers: the documents of the space restricted to some people, which removing a
+ * member also takes away from them.
+ */
+function RestrictedDocuments({ space }: { space: Space }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const restricted = useInfiniteQuery({
+    queryKey: keys.restrictedDocuments(space.id),
+    queryFn: ({ pageParam }) => call(() => api.GET('/api/v1/spaces/{spaceId}/documents', {
+      params: { path: { spaceId: space.id }, query: { restricted: true, page: pageParam, size: 200 } },
+    })),
+    initialPageParam: 0,
+    getNextPageParam: (last) => ((last.page + 1) * last.size < last.total ? last.page + 1 : undefined),
+  });
+  const folders = useQuery({
+    queryKey: keys.folders(space.id),
+    queryFn: () => call(() => api.GET('/api/v1/spaces/{spaceId}/folders', { params: { path: { spaceId: space.id } } })),
+  });
+  const folderName = (id?: string | null) => folders.data?.find((folder) => folder.id === id)?.name ?? t('library.noFolder');
+  const items = restricted.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = restricted.data?.pages[0]?.total ?? 0;
+
+  return (
+    <section aria-labelledby="space-restricted">
+      <h2 className="section-title" id="space-restricted">
+        <Icon name="lock" />{t('restricted.title')}
+        {restricted.data && <span className="muted">{total}</span>}
+      </h2>
+      <p className="help" style={{ marginBottom: 10 }}>{t('restricted.help')}</p>
+      {restricted.isError && <Callout tone="error" role="alert">{errorMessage(i18n, restricted.error)}</Callout>}
+      {restricted.isPending && <div className="grid-empty" role="status"><Spinner /><span className="sr-only">{t('common.loading')}</span></div>}
+      {restricted.isSuccess && items.length === 0 && <p className="help">{t('restricted.none')}</p>}
+      {items.length > 0 && (
+        <ul className="list">
+          {items.map((item) => (
+            <li key={item.id}>
+              <Link className="list-row" to={`/documents/${item.id}`}>
+                <span className="cat-ico"><FormatIcon mediaType={item.mediaType} /></span>
+                <span className="list-main">
+                  <span className="list-title">{item.title}</span>
+                  <span className="list-sub">{folderName(item.folderId)}</span>
+                </span>
+                <span className="list-side">
+                  <Owner owner={item.owner} />
+                  <span>{i18n.relative(item.updatedAt)}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {restricted.hasNextPage && (
+        <div className="row-between" style={{ marginTop: 10 }}>
+          <span className="help">{t('restricted.shown', { count: items.length, total })}</span>
+          <button type="button" className="btn" disabled={restricted.isFetchingNextPage} onClick={() => void restricted.fetchNextPage()}>
+            {restricted.isFetchingNextPage && <Spinner />}
+            {t('common.loadMore')}
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 

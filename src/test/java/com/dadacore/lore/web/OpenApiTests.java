@@ -30,6 +30,12 @@ class OpenApiTests extends ApiTest {
         assertThat(response.json().get("paths").has("/api/v1/admin/members/{id}")).isTrue();
         assertThat(response.json().get("paths").has("/api/v1/spaces/{spaceId}/members/{userId}")).isTrue();
         assertThat(response.json().get("paths").has("/api/v1/spaces/{spaceId}/folders/{folderId}")).isTrue();
+        assertThat(response.json().get("paths").has("/api/v1/spaces/{spaceId}/documents")).isTrue();
+        assertThat(response.json().get("paths").has("/api/v1/documents/{id}/access")).isTrue();
+        assertThat(response.json().get("paths").has("/api/v1/admin/storage")).isTrue();
+        // The import is a form with a file, described as such.
+        assertThat(response.json().at("/paths/~1api~1v1~1spaces~1{spaceId}~1documents/post/requestBody/content")
+                .has("multipart/form-data")).isTrue();
         // The Viewer parameter is filled by the server.
         assertThat(response.json().toString()).doesNotContain("\"name\":\"viewer\"");
 

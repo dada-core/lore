@@ -99,13 +99,20 @@ class Folders {
     }
 
     /**
-     * Deletes a folder. When documents arrive, a folder that holds some will answer
-     * {@code 409 folder_not_empty}.
+     * Deletes an empty folder: one that holds documents, even some the person cannot see, answers
+     * {@code 409 folder_not_empty} (a known limit: it tells that the folder is not empty, nothing more).
      */
     @Transactional
     void delete(Viewer viewer, UUID spaceId, UUID folderId) {
         Space space = spaces.openForChange(viewer, spaceId, SpaceRole.CONTRIBUTOR).requireActive().space();
         FolderView folder = find(space.id(), folderId).orElseThrow(ApiException::notFound);
+        boolean empty = !jdbc.sql("select exists (select 1 from document where folder_id = ?)")
+                .param(folderId)
+                .query(Boolean.class)
+                .single();
+        if (!empty) {
+            throw ApiException.conflict("folder_not_empty");
+        }
         jdbc.sql("delete from folder where id = ?").param(folderId).update();
         spaces.touch(space.id());
         audit.record(entry(viewer, space, "folder.deleted", folderId).detail("name", folder.name()).build());

@@ -9,6 +9,9 @@ updates:
     groups:
       maven:
         update-types: [minor, patch]
+    ignore:
+      # commonmark follows the version Tika is built with (see pom.xml): it moves with Tika.
+      - dependency-name: "org.commonmark:*"
 
   - package-ecosystem: npm
     directory: /web

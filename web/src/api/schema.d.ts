@@ -12,7 +12,7 @@ export interface paths {
             cookie?: never;
         };
         /** Profile and preferences of the signed-in person */
-        get: operations["get_2"];
+        get: operations["get_3"];
         put?: never;
         post?: never;
         delete?: never;
@@ -150,7 +150,7 @@ export interface paths {
             cookie?: never;
         };
         /** Members of the organization, by name; q searches names and addresses */
-        get: operations["list_3"];
+        get: operations["list_4"];
         put?: never;
         post?: never;
         delete?: never;
@@ -236,14 +236,32 @@ export interface paths {
             cookie?: never;
         };
         /** Settings of the organization */
-        get: operations["get_1"];
+        get: operations["get_2"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         /** Change settings of the organization */
-        patch: operations["update_1"];
+        patch: operations["update_2"];
+        trace?: never;
+    };
+    "/api/v1/admin/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the organization stores, the size of a file and the state of the extraction */
+        get: operations["storage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Choose the size of a file, up to the ceiling of the server */
+        patch: operations["changeStorage"];
         trace?: never;
     };
     "/api/v1/auth/login": {
@@ -274,6 +292,111 @@ export interface paths {
         put?: never;
         /** Sign out: the session is deleted on the server */
         post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A document, its current version and what the person may do with it */
+        get: operations["get_1"];
+        put?: never;
+        post?: never;
+        /** Delete a document for good: its maintainers, or who imported it while it has one version */
+        delete: operations["delete_2"];
+        options?: never;
+        head?: never;
+        /** Change the title, the description or the category; an empty description or category is removed */
+        patch: operations["update_1"];
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who sees a restricted document, and why */
+        get: operations["access"];
+        /** Restrict a document to the people chosen, or open it to the space again */
+        put: operations["changeAccess"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/extraction/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Try the extraction again after a passing failure; 409 not_retryable otherwise */
+        post: operations["retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move a document to another folder of its space, or to its root with folderId null */
+        post: operations["move"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imports/attention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The documents the person imported that are still extracting or failed */
+        get: operations["attention"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imports/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The size and the formats accepted for an import */
+        get: operations["limits"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -488,6 +611,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/spaces/{spaceId}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A page of the documents of a space the person can see, by folder then most recent first; folder=none lists those without a folder, ids (100 at most) follows given documents */
+        get: operations["list_3"];
+        put?: never;
+        /** Import a file into a space: a new document and its version 1, whose text is extracted next; duplicateOf names a document of the space with the same content */
+        post: operations["importFile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spaces/{spaceId}/documents/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The counts of the documents of a space the person can see: in all, by folder, in progress, scanned, failed */
+        get: operations["summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/spaces/{spaceId}/folders": {
         parameters: {
             query?: never;
@@ -581,6 +739,23 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AccessChange: {
+            restricted?: boolean | null;
+            userIds?: string[] | null;
+        };
+        AccessPerson: {
+            displayName: string;
+            email: string;
+            /** Format: uuid */
+            id: string;
+            reasons: string[];
+        };
+        AccessView: {
+            people: components["schemas"]["AccessPerson"][];
+            restricted: boolean;
+            /** Format: int32 */
+            spaceMembers: number;
+        };
         AccountView: {
             displayName: string;
             email: string;
@@ -589,6 +764,14 @@ export interface components {
             /** Format: int32 */
             passwordMinLength: number;
             role: string;
+        };
+        AttentionItem: {
+            extractionError?: string | null;
+            extractionStatus: string;
+            /** Format: uuid */
+            id: string;
+            space: components["schemas"]["SpaceLink"];
+            title: string;
         };
         Candidate: {
             displayName: string;
@@ -617,9 +800,102 @@ export interface components {
             locale: string;
             role: string;
         };
+        DocumentActions: {
+            delete: boolean;
+            edit: boolean;
+            manageAccess: boolean;
+            retry: boolean;
+        };
+        DocumentChanges: {
+            category?: string | null;
+            description?: string | null;
+            title?: string | null;
+        };
+        DocumentItem: {
+            category?: string | null;
+            extractionError?: string | null;
+            extractionStatus: string;
+            filename: string;
+            /** Format: uuid */
+            folderId?: string | null;
+            /** Format: uuid */
+            id: string;
+            language?: string | null;
+            mediaType: string;
+            owner?: components["schemas"]["PersonLink"] | null;
+            /** Format: int32 */
+            pageCount?: number | null;
+            restricted: boolean;
+            /** Format: int32 */
+            sectionCount?: number | null;
+            /** Format: int64 */
+            sizeBytes: number;
+            status: string;
+            title: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: int32 */
+            version: number;
+        };
+        DocumentLink: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+        };
+        DocumentMove: {
+            /** Format: uuid */
+            folderId?: string | null;
+        };
+        DocumentSummary: {
+            /** Format: int64 */
+            failed: number;
+            folders: components["schemas"]["FolderDocuments"][];
+            /** Format: int64 */
+            inProgress: number;
+            /** Format: int64 */
+            scanned: number;
+            /** Format: int64 */
+            total: number;
+        };
+        DocumentView: {
+            actions: components["schemas"]["DocumentActions"];
+            category?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            currentVersion: components["schemas"]["VersionView"];
+            description?: string | null;
+            duplicateOf?: components["schemas"]["DocumentLink"] | null;
+            folder?: components["schemas"]["FolderLink"] | null;
+            /** Format: uuid */
+            id: string;
+            owner?: components["schemas"]["PersonLink"] | null;
+            restricted: boolean;
+            space: components["schemas"]["SpaceLink"];
+            status: string;
+            title: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         EmailChange: {
             currentPassword: string;
             email: string;
+        };
+        ExtractionView: {
+            active: boolean;
+            problem?: string | null;
+            /** Format: int32 */
+            workers: number;
+        };
+        FolderDocuments: {
+            /** Format: int64 */
+            count: number;
+            /** Format: uuid */
+            folderId?: string | null;
+        };
+        FolderLink: {
+            /** Format: uuid */
+            id: string;
+            name: string;
         };
         FolderName: {
             name: string;
@@ -630,6 +906,23 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+        };
+        ImportForm: {
+            category?: string | null;
+            /** Format: binary */
+            file: string;
+            /** Format: uuid */
+            folderId?: string | null;
+            restricted?: boolean | null;
+            status?: string | null;
+            userIds?: string[] | null;
+        };
+        ImportLimits: {
+            extensions: string[];
+            /** Format: int64 */
+            maxBytes: number;
+            /** Format: int32 */
+            maxMegabytes: number;
         };
         InspectRequest: {
             token: string;
@@ -720,6 +1013,15 @@ export interface components {
             name: string;
             timeZone: string;
         };
+        PageResponseDocumentItem: {
+            items: components["schemas"]["DocumentItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            size: number;
+            /** Format: int64 */
+            total: number;
+        };
         PageResponseMemberView: {
             items: components["schemas"]["MemberView"][];
             /** Format: int32 */
@@ -733,6 +1035,11 @@ export interface components {
             currentPassword: string;
             newPassword: string;
             signOutOtherSessions: boolean;
+        };
+        PersonLink: {
+            displayName: string;
+            /** Format: uuid */
+            id: string;
         };
         ProfileUpdate: {
             displayName?: string | null;
@@ -817,6 +1124,13 @@ export interface components {
             /** Format: uuid */
             spaceId: string;
         };
+        SpaceLink: {
+            color: string;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            slug: string;
+        };
         SpaceMemberView: {
             active: boolean;
             /** Format: date-time */
@@ -838,6 +1152,8 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             description?: string | null;
+            /** Format: int64 */
+            documentCount: number;
             /** Format: uuid */
             id: string;
             /** Format: date-time */
@@ -848,8 +1164,58 @@ export interface components {
             role: string;
             slug: string;
         };
+        StorageChange: {
+            /** Format: int32 */
+            maxUploadMegabytes?: number | null;
+        };
+        StorageView: {
+            /** Format: int32 */
+            defaultMaxUploadMegabytes: number;
+            /** Format: int64 */
+            documents: number;
+            extensions: string[];
+            extraction: components["schemas"]["ExtractionView"];
+            /** Format: int64 */
+            failed: number;
+            filesPath: string;
+            /** Format: int64 */
+            freeBytes: number;
+            /** Format: int64 */
+            inProgress: number;
+            /** Format: int32 */
+            maxUploadCeilingMegabytes: number;
+            /** Format: int32 */
+            maxUploadMegabytes: number;
+            /** Format: int64 */
+            scanned: number;
+            /** Format: int64 */
+            usedBytes: number;
+        };
         VerifyCodeRequest: {
             setupCode: string;
+        };
+        VersionView: {
+            author?: components["schemas"]["PersonLink"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            extractedAt?: string | null;
+            extractionError?: string | null;
+            extractionStatus: string;
+            filename: string;
+            /** Format: uuid */
+            id: string;
+            language?: string | null;
+            mediaType: string;
+            /** Format: int32 */
+            number: number;
+            /** Format: int32 */
+            pageCount?: number | null;
+            /** Format: int32 */
+            sectionCount?: number | null;
+            /** Format: int64 */
+            sizeBytes: number;
+            textTruncated: boolean;
         };
     };
     responses: never;
@@ -860,7 +1226,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    get_2: {
+    get_3: {
         parameters: {
             query?: never;
             header?: never;
@@ -1080,7 +1446,7 @@ export interface operations {
             };
         };
     };
-    list_3: {
+    list_4: {
         parameters: {
             query?: {
                 q?: string;
@@ -1216,7 +1582,7 @@ export interface operations {
             };
         };
     };
-    get_1: {
+    get_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -1236,7 +1602,7 @@ export interface operations {
             };
         };
     };
-    update_1: {
+    update_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -1256,6 +1622,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsView"];
+                };
+            };
+        };
+    };
+    storage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageView"];
+                };
+            };
+        };
+    };
+    changeStorage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorageChange"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageView"];
                 };
             };
         };
@@ -1299,6 +1709,210 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentView"];
+                };
+            };
+        };
+    };
+    delete_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentChanges"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentView"];
+                };
+            };
+        };
+    };
+    access: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessView"];
+                };
+            };
+        };
+    };
+    changeAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccessChange"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessView"];
+                };
+            };
+        };
+    };
+    retry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentView"];
+                };
+            };
+        };
+    };
+    move: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentMove"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentView"];
+                };
+            };
+        };
+    };
+    attention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttentionItem"][];
+                };
+            };
+        };
+    };
+    limits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportLimits"];
+                };
             };
         };
     };
@@ -1660,6 +2274,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpaceView"];
+                };
+            };
+        };
+    };
+    list_3: {
+        parameters: {
+            query?: {
+                folder?: string | null;
+                restricted?: boolean | null;
+                ids?: string[] | null;
+                page?: number | null;
+                size?: number | null;
+            };
+            header?: never;
+            path: {
+                spaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponseDocumentItem"];
+                };
+            };
+        };
+    };
+    importFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["ImportForm"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentView"];
+                };
+            };
+        };
+    };
+    summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentSummary"];
                 };
             };
         };

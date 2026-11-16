@@ -57,6 +57,8 @@ curl -fsS http://localhost:8080/api/v1/session | grep -q '"setupRequired":true' 
 curl -fsS http://localhost:8080/setup | grep -q '<div id="root">' || fail "the setup page does not answer"
 grep -q "setup code" /tmp/lore.log || fail "no setup code in the logs"
 lore help | grep -q reset-password || fail "lore help"
+# The reduced Java runtime of the package holds what the text extraction needs.
+sh "$(dirname "$0")/import-check.sh" /tmp/lore.log || fail "import of a PDF"
 if command -v systemd-analyze >/dev/null 2>&1; then
   # Warnings and errors only: systemd 239 (RHEL 8) also prints its debug messages otherwise.
   SYSTEMD_LOG_LEVEL=notice systemd-analyze verify /usr/lib/systemd/system/lore.service || fail "systemd-analyze verify"

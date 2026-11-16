@@ -10,6 +10,8 @@ lore:
     password: ""
   session-timeout: 8h
   log-level: INFO
+  files-path: /var/lib/lore/files
+  max-upload-size: 1GB
 
 spring:
   application:
@@ -34,12 +36,21 @@ spring:
     resources:
       # The interface is served by SpaConfiguration.
       add-mappings: false
+  servlet:
+    multipart:
+      # Only the ceiling here: the size chosen by the administrators is checked by Lore, before
+      # the file is read (resolve-lazily) when the request announces its length.
+      max-file-size: ${lore.max-upload-size}
+      resolve-lazily: true
 
 server:
   # LORE_PORT, for the packages and the archive; with Docker, change the published port instead.
   port: ${LORE_PORT:8080}
   # Trusts X-Forwarded-* headers from a reverse proxy on the internal network.
   forward-headers-strategy: native
+  tomcat:
+    # The header of the file in an import holds its name: up to 255 characters, several bytes each.
+    max-part-header-size: 2KB
   servlet:
     session:
       timeout: ${lore.session-timeout}

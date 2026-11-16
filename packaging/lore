@@ -43,6 +43,12 @@ case ${version:-0} in
 esac
 
 jar=$home/lib/lore.jar
+# The archive keeps its imported files next to bin/, unless LORE_FILES_PATH says otherwise; the
+# packages (with their own Java runtime) use /var/lib/lore/files.
+if [ ! -d "$home/runtime" ] && [ -z "${LORE_FILES_PATH:-}" ]; then
+  LORE_FILES_PATH=$home/data/files
+  export LORE_FILES_PATH
+fi
 case ${1:-} in
   '' | --*)
     # shellcheck disable=SC2086 # LORE_JAVA_OPTS holds several options

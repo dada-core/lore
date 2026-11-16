@@ -22,5 +22,8 @@ Thumbs.db
 .env
 *.log
 
+# Files imported while developing (application-dev.yml)
+/data/
+
 # Local working files, never published
 /Local/

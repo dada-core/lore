@@ -1,6 +1,62 @@
 {
   "components" : {
     "schemas" : {
+      "AccessChange" : {
+        "properties" : {
+          "restricted" : {
+            "type" : [ "boolean", "null" ]
+          },
+          "userIds" : {
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "type" : [ "array", "null" ]
+          }
+        },
+        "type" : "object"
+      },
+      "AccessPerson" : {
+        "properties" : {
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "reasons" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "required" : [ "displayName", "email", "id", "reasons" ],
+        "type" : "object"
+      },
+      "AccessView" : {
+        "properties" : {
+          "people" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AccessPerson"
+            },
+            "type" : "array"
+          },
+          "restricted" : {
+            "type" : "boolean"
+          },
+          "spaceMembers" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "people", "restricted", "spaceMembers" ],
+        "type" : "object"
+      },
       "AccountView" : {
         "properties" : {
           "displayName" : {
@@ -24,6 +80,28 @@
           }
         },
         "required" : [ "displayName", "email", "interfaceLocale", "passwordMinLength", "role" ],
+        "type" : "object"
+      },
+      "AttentionItem" : {
+        "properties" : {
+          "extractionError" : {
+            "type" : [ "string", "null" ]
+          },
+          "extractionStatus" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "space" : {
+            "$ref" : "#/components/schemas/SpaceLink"
+          },
+          "title" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "extractionStatus", "id", "space", "title" ],
         "type" : "object"
       },
       "Candidate" : {
@@ -101,6 +179,219 @@
         "required" : [ "displayName", "email", "id", "locale", "role" ],
         "type" : "object"
       },
+      "DocumentActions" : {
+        "properties" : {
+          "delete" : {
+            "type" : "boolean"
+          },
+          "edit" : {
+            "type" : "boolean"
+          },
+          "manageAccess" : {
+            "type" : "boolean"
+          },
+          "retry" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "delete", "edit", "manageAccess", "retry" ],
+        "type" : "object"
+      },
+      "DocumentChanges" : {
+        "properties" : {
+          "category" : {
+            "type" : [ "string", "null" ]
+          },
+          "description" : {
+            "type" : [ "string", "null" ]
+          },
+          "title" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "type" : "object"
+      },
+      "DocumentItem" : {
+        "properties" : {
+          "category" : {
+            "type" : [ "string", "null" ]
+          },
+          "extractionError" : {
+            "type" : [ "string", "null" ]
+          },
+          "extractionStatus" : {
+            "type" : "string"
+          },
+          "filename" : {
+            "type" : "string"
+          },
+          "folderId" : {
+            "format" : "uuid",
+            "type" : [ "string", "null" ]
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "language" : {
+            "type" : [ "string", "null" ]
+          },
+          "mediaType" : {
+            "type" : "string"
+          },
+          "owner" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/PersonLink"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "pageCount" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "restricted" : {
+            "type" : "boolean"
+          },
+          "sectionCount" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "sizeBytes" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "version" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "extractionStatus", "filename", "id", "mediaType", "restricted", "sizeBytes", "status", "title", "updatedAt", "version" ],
+        "type" : "object"
+      },
+      "DocumentLink" : {
+        "properties" : {
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "id", "title" ],
+        "type" : "object"
+      },
+      "DocumentMove" : {
+        "properties" : {
+          "folderId" : {
+            "format" : "uuid",
+            "type" : [ "string", "null" ]
+          }
+        },
+        "type" : "object"
+      },
+      "DocumentSummary" : {
+        "properties" : {
+          "failed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "folders" : {
+            "items" : {
+              "$ref" : "#/components/schemas/FolderDocuments"
+            },
+            "type" : "array"
+          },
+          "inProgress" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "scanned" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "total" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "failed", "folders", "inProgress", "scanned", "total" ],
+        "type" : "object"
+      },
+      "DocumentView" : {
+        "properties" : {
+          "actions" : {
+            "$ref" : "#/components/schemas/DocumentActions"
+          },
+          "category" : {
+            "type" : [ "string", "null" ]
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "currentVersion" : {
+            "$ref" : "#/components/schemas/VersionView"
+          },
+          "description" : {
+            "type" : [ "string", "null" ]
+          },
+          "duplicateOf" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/DocumentLink"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "folder" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/FolderLink"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "owner" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/PersonLink"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "restricted" : {
+            "type" : "boolean"
+          },
+          "space" : {
+            "$ref" : "#/components/schemas/SpaceLink"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "required" : [ "actions", "createdAt", "currentVersion", "id", "restricted", "space", "status", "title", "updatedAt" ],
+        "type" : "object"
+      },
       "EmailChange" : {
         "properties" : {
           "currentPassword" : {
@@ -111,6 +402,49 @@
           }
         },
         "required" : [ "currentPassword", "email" ],
+        "type" : "object"
+      },
+      "ExtractionView" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "problem" : {
+            "type" : [ "string", "null" ]
+          },
+          "workers" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "active", "workers" ],
+        "type" : "object"
+      },
+      "FolderDocuments" : {
+        "properties" : {
+          "count" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "folderId" : {
+            "format" : "uuid",
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "count" ],
+        "type" : "object"
+      },
+      "FolderLink" : {
+        "properties" : {
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "id", "name" ],
         "type" : "object"
       },
       "FolderName" : {
@@ -137,6 +471,56 @@
           }
         },
         "required" : [ "createdAt", "id", "name" ],
+        "type" : "object"
+      },
+      "ImportForm" : {
+        "properties" : {
+          "category" : {
+            "type" : [ "string", "null" ]
+          },
+          "file" : {
+            "format" : "binary",
+            "type" : "string"
+          },
+          "folderId" : {
+            "format" : "uuid",
+            "type" : [ "string", "null" ]
+          },
+          "restricted" : {
+            "type" : [ "boolean", "null" ]
+          },
+          "status" : {
+            "type" : [ "string", "null" ]
+          },
+          "userIds" : {
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "type" : [ "array", "null" ]
+          }
+        },
+        "required" : [ "file" ],
+        "type" : "object"
+      },
+      "ImportLimits" : {
+        "properties" : {
+          "extensions" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "maxBytes" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "maxMegabytes" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "extensions", "maxBytes", "maxMegabytes" ],
         "type" : "object"
       },
       "InspectRequest" : {
@@ -391,6 +775,30 @@
         "required" : [ "defaultLocale", "name", "timeZone" ],
         "type" : "object"
       },
+      "PageResponseDocumentItem" : {
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/DocumentItem"
+            },
+            "type" : "array"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "items", "page", "size", "total" ],
+        "type" : "object"
+      },
       "PageResponseMemberView" : {
         "properties" : {
           "items" : {
@@ -428,6 +836,19 @@
           }
         },
         "required" : [ "currentPassword", "newPassword", "signOutOtherSessions" ],
+        "type" : "object"
+      },
+      "PersonLink" : {
+        "properties" : {
+          "displayName" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "required" : [ "displayName", "id" ],
         "type" : "object"
       },
       "ProfileUpdate" : {
@@ -656,6 +1077,25 @@
         "required" : [ "role", "spaceId" ],
         "type" : "object"
       },
+      "SpaceLink" : {
+        "properties" : {
+          "color" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "color", "id", "name", "slug" ],
+        "type" : "object"
+      },
       "SpaceMemberView" : {
         "properties" : {
           "active" : {
@@ -710,6 +1150,10 @@
           "description" : {
             "type" : [ "string", "null" ]
           },
+          "documentCount" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
           "id" : {
             "format" : "uuid",
             "type" : "string"
@@ -732,7 +1176,70 @@
             "type" : "string"
           }
         },
-        "required" : [ "color", "createdAt", "id", "lastActivityAt", "memberCount", "name", "role", "slug" ],
+        "required" : [ "color", "createdAt", "documentCount", "id", "lastActivityAt", "memberCount", "name", "role", "slug" ],
+        "type" : "object"
+      },
+      "StorageChange" : {
+        "properties" : {
+          "maxUploadMegabytes" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          }
+        },
+        "type" : "object"
+      },
+      "StorageView" : {
+        "properties" : {
+          "defaultMaxUploadMegabytes" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "documents" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "extensions" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "extraction" : {
+            "$ref" : "#/components/schemas/ExtractionView"
+          },
+          "failed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "filesPath" : {
+            "type" : "string"
+          },
+          "freeBytes" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "inProgress" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "maxUploadCeilingMegabytes" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "maxUploadMegabytes" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "scanned" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "usedBytes" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "defaultMaxUploadMegabytes", "documents", "extensions", "extraction", "failed", "filesPath", "freeBytes", "inProgress", "maxUploadCeilingMegabytes", "maxUploadMegabytes", "scanned", "usedBytes" ],
         "type" : "object"
       },
       "VerifyCodeRequest" : {
@@ -742,6 +1249,65 @@
           }
         },
         "required" : [ "setupCode" ],
+        "type" : "object"
+      },
+      "VersionView" : {
+        "properties" : {
+          "author" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/PersonLink"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "extractedAt" : {
+            "format" : "date-time",
+            "type" : [ "string", "null" ]
+          },
+          "extractionError" : {
+            "type" : [ "string", "null" ]
+          },
+          "extractionStatus" : {
+            "type" : "string"
+          },
+          "filename" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "language" : {
+            "type" : [ "string", "null" ]
+          },
+          "mediaType" : {
+            "type" : "string"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageCount" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "sectionCount" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          },
+          "sizeBytes" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "textTruncated" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "createdAt", "extractionStatus", "filename", "id", "mediaType", "number", "sizeBytes", "textTruncated" ],
         "type" : "object"
       }
     }
@@ -759,7 +1325,7 @@
   "paths" : {
     "/api/v1/account" : {
       "get" : {
-        "operationId" : "get_2",
+        "operationId" : "get_3",
         "responses" : {
           "200" : {
             "content" : {
@@ -1002,7 +1568,7 @@
     },
     "/api/v1/admin/members" : {
       "get" : {
-        "operationId" : "list_3",
+        "operationId" : "list_4",
         "parameters" : [ {
           "in" : "query",
           "name" : "q",
@@ -1186,7 +1752,7 @@
     },
     "/api/v1/admin/organization" : {
       "get" : {
-        "operationId" : "get_1",
+        "operationId" : "get_2",
         "responses" : {
           "200" : {
             "content" : {
@@ -1203,7 +1769,7 @@
         "tags" : [ "Administration" ]
       },
       "patch" : {
-        "operationId" : "update_1",
+        "operationId" : "update_2",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -1228,6 +1794,52 @@
         },
         "summary" : "Change settings of the organization",
         "tags" : [ "Administration" ]
+      }
+    },
+    "/api/v1/admin/storage" : {
+      "get" : {
+        "operationId" : "storage",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StorageView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "What the organization stores, the size of a file and the state of the extraction",
+        "tags" : [ "Documents" ]
+      },
+      "patch" : {
+        "operationId" : "changeStorage",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StorageChange"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StorageView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Choose the size of a file, up to the ceiling of the server",
+        "tags" : [ "Documents" ]
       }
     },
     "/api/v1/auth/login" : {
@@ -1269,6 +1881,260 @@
         },
         "summary" : "Sign out: the session is deleted on the server",
         "tags" : [ "Session" ]
+      }
+    },
+    "/api/v1/documents/{id}" : {
+      "delete" : {
+        "operationId" : "delete_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Delete a document for good: its maintainers, or who imported it while it has one version",
+        "tags" : [ "Documents" ]
+      },
+      "get" : {
+        "operationId" : "get_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DocumentView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A document, its current version and what the person may do with it",
+        "tags" : [ "Documents" ]
+      },
+      "patch" : {
+        "operationId" : "update_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DocumentChanges"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DocumentView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Change the title, the description or the category; an empty description or category is removed",
+        "tags" : [ "Documents" ]
+      }
+    },
+    "/api/v1/documents/{id}/access" : {
+      "get" : {
+        "operationId" : "access",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Who sees a restricted document, and why",
+        "tags" : [ "Documents" ]
+      },
+      "put" : {
+        "operationId" : "changeAccess",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AccessChange"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Restrict a document to the people chosen, or open it to the space again",
+        "tags" : [ "Documents" ]
+      }
+    },
+    "/api/v1/documents/{id}/extraction/retry" : {
+      "post" : {
+        "operationId" : "retry",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DocumentView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Try the extraction again after a passing failure; 409 not_retryable otherwise",
+        "tags" : [ "Documents" ]
+      }
+    },
+    "/api/v1/documents/{id}/move" : {
+      "post" : {
+        "operationId" : "move",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DocumentMove"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DocumentView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Move a document to another folder of its space, or to its root with folderId null",
+        "tags" : [ "Documents" ]
+      }
+    },
+    "/api/v1/imports/attention" : {
+      "get" : {
+        "operationId" : "attention",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/AttentionItem"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The documents the person imported that are still extracting or failed",
+        "tags" : [ "Documents" ]
+      }
+    },
+    "/api/v1/imports/limits" : {
+      "get" : {
+        "operationId" : "limits",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ImportLimits"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The size and the formats accepted for an import",
+        "tags" : [ "Documents" ]
       }
     },
     "/api/v1/invitations/accept" : {
@@ -1696,6 +2562,138 @@
         },
         "summary" : "Make an archived space active again",
         "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/{spaceId}/documents" : {
+      "get" : {
+        "operationId" : "list_3",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "folder",
+          "required" : false,
+          "schema" : {
+            "type" : [ "string", "null" ]
+          }
+        }, {
+          "in" : "query",
+          "name" : "restricted",
+          "required" : false,
+          "schema" : {
+            "type" : [ "boolean", "null" ]
+          }
+        }, {
+          "in" : "query",
+          "name" : "ids",
+          "required" : false,
+          "schema" : {
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "type" : [ "array", "null" ]
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageResponseDocumentItem"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A page of the documents of a space the person can see, by folder then most recent first; folder=none lists those without a folder, ids (100 at most) follows given documents",
+        "tags" : [ "Documents" ]
+      },
+      "post" : {
+        "operationId" : "importFile",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ImportForm"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DocumentView"
+                }
+              }
+            },
+            "description" : "Created"
+          }
+        },
+        "summary" : "Import a file into a space: a new document and its version 1, whose text is extracted next; duplicateOf names a document of the space with the same content",
+        "tags" : [ "Documents" ]
+      }
+    },
+    "/api/v1/spaces/{spaceId}/documents/summary" : {
+      "get" : {
+        "operationId" : "summary",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DocumentSummary"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The counts of the documents of a space the person can see: in all, by folder, in progress, scanned, failed",
+        "tags" : [ "Documents" ]
       }
     },
     "/api/v1/spaces/{spaceId}/folders" : {

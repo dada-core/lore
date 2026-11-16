@@ -16,6 +16,8 @@ import com.dadacore.lore.access.SpaceRole;
 import com.dadacore.lore.audit.AuditEntry;
 import com.dadacore.lore.audit.AuditLog;
 import com.dadacore.lore.identity.Viewer;
+import com.dadacore.lore.library.documents.DocumentCounts;
+import com.dadacore.lore.library.documents.FileJanitor;
 import com.dadacore.lore.shared.ApiException;
 import com.dadacore.lore.shared.Checks;
 import com.dadacore.lore.shared.Slugs;
@@ -44,12 +46,17 @@ public class Spaces {
     private final SpaceRepository repository;
     private final SpaceAccess access;
     private final SpaceMembers members;
+    private final DocumentCounts documents;
+    private final FileJanitor files;
     private final AuditLog audit;
 
-    Spaces(SpaceRepository repository, SpaceAccess access, SpaceMembers members, AuditLog audit) {
+    Spaces(SpaceRepository repository, SpaceAccess access, SpaceMembers members, DocumentCounts documents,
+            FileJanitor files, AuditLog audit) {
         this.repository = repository;
         this.access = access;
         this.members = members;
+        this.documents = documents;
+        this.files = files;
         this.audit = audit;
     }
 
@@ -57,11 +64,12 @@ public class Spaces {
      * @param slug           the address of the space in the interface: /spaces/{slug}
      * @param role           the role of the person: maintainer for owners and administrators
      * @param memberCount    the members of the space, without the administrators who are not
-     * @param lastActivityAt the last change of the space or of its folders
+     * @param documentCount  the documents of the space the person can see
+     * @param lastActivityAt the last change of the space, of its folders or of its documents
      * @param archivedAt     null while the space is active
      */
     record SpaceView(UUID id, String name, String slug, @Nullable String description, String color, String role,
-            int memberCount, Instant createdAt, Instant lastActivityAt, @Nullable Instant archivedAt) {
+            int memberCount, long documentCount, Instant createdAt, Instant lastActivityAt, @Nullable Instant archivedAt) {
     }
 
     /**
@@ -125,19 +133,21 @@ public class Spaces {
         List<UUID> ids = spaces.stream().map(Space::id).toList();
         Map<UUID, SpaceRole> roles = access.roles(viewer, ids);
         Map<UUID, Integer> counts = members.counts(ids);
+        Map<UUID, Long> documentCounts = documents.counts(viewer, ids);
         return spaces.stream()
                 .filter(space -> roles.containsKey(space.id()))
-                .map(space -> view(space, roles.get(space.id()), counts.getOrDefault(space.id(), 0)))
+                .map(space -> view(space, roles.get(space.id()), counts.getOrDefault(space.id(), 0),
+                        documentCounts.getOrDefault(space.id(), 0L)))
                 .toList();
     }
 
     SpaceView get(Viewer viewer, UUID id) {
-        return view(open(viewer, id, SpaceRole.READER));
+        return view(viewer, open(viewer, id, SpaceRole.READER));
     }
 
     SpaceView bySlug(Viewer viewer, String slug) {
         Space space = repository.findBySlug(viewer.organizationId(), slug).orElseThrow(ApiException::notFound);
-        return view(new OpenedSpace(space, access.require(viewer, space.ref(), SpaceRole.READER)));
+        return view(viewer, new OpenedSpace(space, access.require(viewer, space.ref(), SpaceRole.READER)));
     }
 
     /** Field errors {@code slug_taken} and {@code invalid_slug}. */
@@ -178,7 +188,7 @@ public class Spaces {
                 .detail("name", name)
                 .detail("slug", slug)
                 .build());
-        return view(space, SpaceRole.MAINTAINER, 1);
+        return view(space, SpaceRole.MAINTAINER, 1, 0);
     }
 
     /** {@code 403 maintainer_only}, {@code 409 space_archived}; field errors as for a new space. */
@@ -211,7 +221,7 @@ public class Spaces {
             changed.add("color");
         }
         if (changed.isEmpty()) {
-            return view(opened);
+            return view(viewer, opened);
         }
         try {
             repository.update(space.id(), name, slug, description, color);
@@ -226,7 +236,7 @@ public class Spaces {
                 .detail("previousName", changed.contains("name") ? space.name() : null)
                 .detail("previousSlug", changed.contains("slug") ? space.slug() : null)
                 .build());
-        return view(open(viewer, id, SpaceRole.MAINTAINER));
+        return view(viewer, open(viewer, id, SpaceRole.MAINTAINER));
     }
 
     /** {@code 403 maintainer_only}. Archiving an archived space, or the reverse, changes nothing. */
@@ -235,7 +245,7 @@ public class Spaces {
         OpenedSpace opened = openForChange(viewer, id, SpaceRole.MAINTAINER);
         Space space = opened.space();
         if (space.archived() == archived) {
-            return view(opened);
+            return view(viewer, opened);
         }
         repository.archive(space.id(), archived);
         audit.record(AuditEntry.of(space.organizationId(), viewer.userId(),
@@ -244,20 +254,25 @@ public class Spaces {
                 .ip(viewer.ip())
                 .detail("name", space.name())
                 .build());
-        return view(open(viewer, id, SpaceRole.MAINTAINER));
+        return view(viewer, open(viewer, id, SpaceRole.MAINTAINER));
     }
 
     /** Deletes the space, its folders and its members. {@code 403 maintainer_only}. */
     @Transactional
     void delete(Viewer viewer, UUID id) {
         Space space = openForChange(viewer, id, SpaceRole.MAINTAINER).space();
+        long documentCount = documents.counts(viewer, List.of(space.id())).getOrDefault(space.id(), 0L);
+        List<String> contents = files.contentsOfSpace(space.id());
         repository.delete(space.id());
         audit.record(AuditEntry.of(space.organizationId(), viewer.userId(), "space.deleted")
                 .resource("space", space.id())
                 .ip(viewer.ip())
                 .detail("name", space.name())
                 .detail("slug", space.slug())
+                .detail("documents", documentCount)
                 .build());
+        // Their files go once the deletion is committed, unless another space uses the same content.
+        files.afterCommit(space.organizationId(), contents);
     }
 
     /** The address derived from the name, followed by -2, -3... when it is already used. */
@@ -312,13 +327,14 @@ public class Spaces {
         return Checks.rejected("slug", "slug_taken");
     }
 
-    private SpaceView view(OpenedSpace opened) {
+    private SpaceView view(Viewer viewer, OpenedSpace opened) {
         Space space = opened.space();
-        return view(space, opened.role(), members.counts(List.of(space.id())).getOrDefault(space.id(), 0));
+        return view(space, opened.role(), members.counts(List.of(space.id())).getOrDefault(space.id(), 0),
+                documents.counts(viewer, List.of(space.id())).getOrDefault(space.id(), 0L));
     }
 
-    private static SpaceView view(Space space, SpaceRole role, int memberCount) {
+    private static SpaceView view(Space space, SpaceRole role, int memberCount, long documentCount) {
         return new SpaceView(space.id(), space.name(), space.slug(), space.description(), space.color(),
-                role.name(), memberCount, space.createdAt(), space.updatedAt(), space.archivedAt());
+                role.name(), memberCount, documentCount, space.createdAt(), space.updatedAt(), space.archivedAt());
     }
 }
