@@ -1,4 +1,4 @@
-import { useEffect, useId, type InputHTMLAttributes, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes } from 'react';
+import { useEffect, useId, type InputHTMLAttributes, type ReactNode, type Ref, type RefObject, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { ApiError } from '../api/client';
 import { fieldMessage } from '../i18n/errors';
 import type { I18n } from '../i18n/i18n';
@@ -133,6 +133,34 @@ export function TextField({ id, label, help: givenHelp, error, mono, aside, ref,
       />
       {error && <FieldError id={errorId}>{error}</FieldError>}
       {help && <p className="help" id={helpId}>{help}</p>}
+    </div>
+  );
+}
+
+interface TextAreaFieldProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'className'> {
+  label: string;
+  help?: ReactNode;
+  error?: string | null;
+  ref?: Ref<HTMLTextAreaElement>;
+}
+
+export function TextAreaField({ id, label, help: givenHelp, error, ref, ...textarea }: TextAreaFieldProps) {
+  const generated = useId();
+  const fieldId = id ?? generated;
+  const help = givenHelp === error ? null : givenHelp;
+  return (
+    <div className="field">
+      <label htmlFor={fieldId}>{label}</label>
+      <textarea
+        ref={ref}
+        id={fieldId}
+        className="textarea"
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy(error ? `${fieldId}-error` : null, help ? `${fieldId}-help` : null)}
+        {...textarea}
+      />
+      {error && <FieldError id={`${fieldId}-error`}>{error}</FieldError>}
+      {help && <p className="help" id={`${fieldId}-help`}>{help}</p>}
     </div>
   );
 }

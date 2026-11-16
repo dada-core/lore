@@ -44,4 +44,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=5s --start-period=90s --retries=5 \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health/readiness HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
 
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/opt/lore/lore.jar"]
+# Half of the memory of the container for the application: the text extraction runs in separate
+# processes of 512 MB each (LORE_EXTRACTION_MEMORY), two at a time by default.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=50", "-jar", "/opt/lore/lore.jar"]

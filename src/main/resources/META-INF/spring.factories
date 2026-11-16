@@ -1,2 +1,3 @@
 org.springframework.boot.diagnostics.FailureAnalyzer=\
-com.dadacore.lore.DatabaseFailureAnalyzer
+com.dadacore.lore.DatabaseFailureAnalyzer,\
+com.dadacore.lore.storage.FilesPathFailureAnalyzer

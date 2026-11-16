@@ -119,6 +119,42 @@ public final class Browser {
         }
     }
 
+    /**
+     * Sends a file as the interface does: a form with the file under {@code file}, and fields
+     * given as {@code "name", "value"} pairs (a name may come back, for a list).
+     */
+    public Response upload(String path, String filename, byte[] content, String... fields) {
+        String boundary = "----lore-test-" + System.nanoTime();
+        java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
+        java.nio.charset.Charset utf8 = java.nio.charset.StandardCharsets.UTF_8;
+        for (int i = 0; i < fields.length; i += 2) {
+            body.writeBytes(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + fields[i] + "\"\r\n\r\n"
+                    + fields[i + 1] + "\r\n").getBytes(utf8));
+        }
+        body.writeBytes(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + filename
+                + "\"\r\nContent-Type: application/octet-stream\r\n\r\n").getBytes(utf8));
+        body.writeBytes(content);
+        body.writeBytes(("\r\n--" + boundary + "--\r\n").getBytes(utf8));
+        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + path))
+                .header("User-Agent", userAgent)
+                .header("Accept", "application/json")
+                .header("X-XSRF-TOKEN", csrfToken())
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray()))
+                .build();
+        try {
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            return new Response(response.statusCode(),
+                    response.body() == null || response.body().isBlank() ? null : JSON.readTree(response.body()),
+                    response.headers());
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
     private String csrfToken() {
         String token = cookie("XSRF-TOKEN");
         if (token == null) {

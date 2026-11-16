@@ -10,3 +10,5 @@ lore:
   public-url: http://localhost:5173
   setup-code: dev-setup-code
   log-level: INFO
+  # Imported files, next to the project (ignored by Git).
+  files-path: data/files

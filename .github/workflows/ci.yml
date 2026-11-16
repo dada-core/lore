@@ -104,6 +104,10 @@ jobs:
           grep -q '"setupRequired":true' session.json
           curl -fsS http://localhost:8080/login | grep -q '<div id="root">'
           docker compose logs lore | grep -q "setup code"
+      - name: A PDF is imported and its text extracted
+        run: |
+          docker compose logs --no-log-prefix lore > lore.log
+          sh packaging/import-check.sh lore.log
       - name: The server command answers
         run: docker compose exec -T lore lore help
       - name: Logs
@@ -162,6 +166,7 @@ jobs:
           for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
           curl -fsS localhost:8080/actuator/health/readiness | grep -q '"UP"'
           grep -q "setup code" "$RUNNER_TEMP/archive.log"
+          sh "$GITHUB_WORKSPACE/packaging/import-check.sh" "$RUNNER_TEMP/archive.log"
       - name: Logs
         if: failure()
         run: cat "$RUNNER_TEMP/archive.log" || true

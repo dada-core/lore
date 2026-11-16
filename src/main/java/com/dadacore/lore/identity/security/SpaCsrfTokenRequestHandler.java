@@ -27,9 +27,13 @@ final class SpaCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
         csrfToken.get();
     }
 
+    /**
+     * The token of the header only. Looking for it among the parameters of a form, as Spring does
+     * by default, would read a whole multipart request (files included) before refusing it.
+     */
     @Override
     public String resolveCsrfTokenValue(HttpServletRequest request, CsrfToken csrfToken) {
         String header = request.getHeader(csrfToken.getHeaderName());
-        return (StringUtils.hasText(header) ? plain : xor).resolveCsrfTokenValue(request, csrfToken);
+        return StringUtils.hasText(header) ? plain.resolveCsrfTokenValue(request, csrfToken) : null;
     }
 }

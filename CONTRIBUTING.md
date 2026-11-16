@@ -20,7 +20,7 @@ docker compose -f compose.dev.yml up -d postgres   # development database, port 
 cd web && npm install && npm run dev               # interface on http://localhost:5173
 ```
 
-In development, the initial setup code is set in `src/main/resources/application-dev.yml`.
+In development, the initial setup code is set in `src/main/resources/application-dev.yml`. Imported files go to `data/files`, ignored by Git: delete it together with the database to start over.
 
 The website and the documentation have their own repository, [dada-core/lore-site](https://github.com/dada-core/lore-site) (Astro). The documentation pages are Markdown files in its `src/content/docs/` folder, in French and English: when a change alters a behaviour they describe, open a pull request there as well.
 

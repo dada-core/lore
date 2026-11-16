@@ -1,14 +1,20 @@
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
+import { api, call, type Schemas } from '../api/client';
+import { keys } from '../api/queryClient';
+import { failureCause, useOpenImport, whileExtracting } from '../documents/documents';
 import { useI18n } from '../i18n/i18n';
 import { View } from '../layouts/AppShell';
 import { useUser } from '../session/session';
-import { SpaceIcon, useCreateSpace, useSpaces, type SpaceRole } from '../spaces/spaces';
+import { canContribute, SpaceIcon, useCreateSpace, useSpaces, type SpaceRole } from '../spaces/spaces';
 import { useDocumentTitle } from '../ui/bits';
-import { Icon, type IconName } from '../ui/Icon';
+import { Icon, Spinner, type IconName } from '../ui/Icon';
+
+type AttentionItem = Schemas['AttentionItem'];
 
 /**
- * Home. It fills up as Lore grows: the spaces of the person for now, then the recent documents
- * and the things to handle with the import. And where to start, and the keyboard shortcuts.
+ * Home. It fills up as Lore grows: the spaces of the person and what their imports still need,
+ * then the recent documents. And where to start, and the keyboard shortcuts.
  */
 export function HomePage() {
   const i18n = useI18n();
@@ -16,7 +22,9 @@ export function HomePage() {
   const user = useUser();
   const spaces = useSpaces();
   const createSpace = useCreateSpace();
+  const openImport = useOpenImport();
   useDocumentTitle(t('home.docTitle'));
+  const canImport = (spaces.data ?? []).some(canContribute);
 
   const today = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone }).format(new Date());
   const firstName = user.displayName.trim().split(/\s+/)[0] ?? user.displayName;
@@ -32,7 +40,15 @@ export function HomePage() {
   ];
 
   return (
-    <View crumbs={[{ label: t('nav.home') }]}>
+    <View
+      crumbs={[{ label: t('nav.home') }]}
+      actions={canImport ? (
+        <button type="button" className="btn btn-primary" onClick={openImport} title={`${t('home.shortcut.import')} (I)`}>
+          <Icon name="upload" />
+          <span className="btn-label">{t('import.open')}</span>
+        </button>
+      ) : undefined}
+    >
       <div className="pad">
         <div className="home">
           <div className="stack">
@@ -51,6 +67,7 @@ export function HomePage() {
                     <SpaceIcon space={space} large />
                     <span>
                       <span className="tile-name">{space.name}</span>
+                      <span className="tile-sub">{i18n.tp('home.spaceDocuments', space.documentCount)}</span>
                       <span className="tile-sub">{i18n.tp('home.spaceMembers', space.memberCount)}</span>
                       <span className="tile-sub">{t('home.spaceRole', { role: t(`spaceRole.${space.role as SpaceRole}`) })}</span>
                     </span>
@@ -80,10 +97,12 @@ export function HomePage() {
               </ul>
             </section>
           </div>
-          <aside className="stack" aria-labelledby="home-shortcuts">
-            <section>
+          <aside className="stack">
+            <Attention />
+            <section aria-labelledby="home-shortcuts">
               <h2 className="section-title" id="home-shortcuts">{t('home.shortcuts')}</h2>
               <ul className="shortcuts">
+                {canImport && <li><span>{t('home.shortcut.import')}</span><kbd className="kbd">I</kbd></li>}
                 <li><span>{t('home.shortcut.sidebar')}</span><kbd className="kbd">[</kbd></li>
                 <li><span>{t('home.shortcut.close')}</span><kbd className="kbd">{t('common.escape')}</kbd></li>
               </ul>
@@ -92,5 +111,59 @@ export function HomePage() {
         </div>
       </div>
     </View>
+  );
+}
+
+/**
+ * To do: the documents the person imported whose import failed, and those still being indexed.
+ * Asked again every ten seconds while one is in progress.
+ */
+function Attention() {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const attention = useQuery({
+    queryKey: keys.attention,
+    queryFn: () => call(() => api.GET('/api/v1/imports/attention')),
+    refetchInterval: whileExtracting((data) => data.some((item) => item.extractionStatus === 'PENDING')),
+  });
+  if (!attention.data) return null;
+  const failed = attention.data.filter((item) => item.extractionStatus === 'FAILED');
+  const pending = attention.data.filter((item) => item.extractionStatus === 'PENDING');
+
+  const group = (id: string, label: string, items: AttentionItem[], failure: boolean) => items.length > 0 && (
+    <div>
+      <h3 className={failure ? 'inbox-head is-err' : 'inbox-head'} id={id}>
+        {failure ? <Icon name="alert" /> : <Spinner />}
+        <span>{label}</span>
+        <span className="n">{items.length}</span>
+      </h3>
+      <ul aria-labelledby={id}>
+        {items.map((item) => (
+          <li key={item.id}>
+            <Link to={`/documents/${item.id}`}>
+              <span>{item.title}</span>
+              <span className="muted">
+                {item.space.name}
+                {failure && <>, {failureCause(i18n, item.extractionError)}</>}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  return (
+    <section aria-labelledby="home-attention">
+      <h2 className="section-title" id="home-attention">{t('home.attention')}</h2>
+      {failed.length + pending.length === 0 ? (
+        <p className="help">{t('home.attention.none')}</p>
+      ) : (
+        <div className="inbox">
+          {group('home-attention-failed', t('home.attention.failed'), failed, true)}
+          {group('home-attention-pending', t('home.attention.pending'), pending, false)}
+        </div>
+      )}
+    </section>
   );
 }

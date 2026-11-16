@@ -72,6 +72,11 @@ export function setUnauthenticatedHandler(handler: () => void): void {
   onUnauthenticated = handler;
 }
 
+/** For a request sent without call(), an upload for example: the server answered 401. */
+export function reportUnauthenticated(): void {
+  onUnauthenticated();
+}
+
 interface Result<T> {
   data?: T;
   error?: unknown;
@@ -87,7 +92,8 @@ async function send<T>(request: () => Promise<Result<T>>): Promise<Result<T>> {
   }
 }
 
-function toApiError(status: number, body: unknown): ApiError {
+/** The error of a response that is not a success, from its status and its body (problem+json). */
+export function toApiError(status: number, body: unknown): ApiError {
   const problem = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
   const code = typeof problem.code === 'string' ? problem.code : status >= 500 ? 'server_error' : 'error';
   const fieldErrors = Array.isArray(problem.errors)

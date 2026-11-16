@@ -21,6 +21,8 @@ if errorlevel 1 (
 )
 
 set "JAR=%LORE_HOME%\lib\lore.jar"
+rem The archive keeps its imported files next to bin\, unless LORE_FILES_PATH says otherwise.
+if not defined LORE_FILES_PATH set "LORE_FILES_PATH=%LORE_HOME%\data\files"
 set "FIRST=%~1"
 if not defined FIRST goto server
 if "%FIRST:~0,2%"=="--" goto server

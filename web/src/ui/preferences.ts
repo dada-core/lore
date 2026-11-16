@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
 
 export type Theme = 'system' | 'light' | 'dark';
 export const THEMES: readonly Theme[] = ['system', 'light', 'dark'];
-export type Panel = 'nav' | 'settings';
+export type Panel = 'nav' | 'settings' | 'props';
 
 const THEME_KEY = 'lore.theme';
 const PANELS_KEY = 'lore.panels';

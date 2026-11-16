@@ -1,9 +1,11 @@
 import { createBrowserRouter, Navigate, Outlet, type RouteObject } from 'react-router';
+import { DocumentPage } from './documents/DocumentPage';
 import { AppShell } from './layouts/AppShell';
 import { AccountPage } from './pages/AccountPage';
 import { GeneralPage } from './pages/admin/GeneralPage';
 import { MembersPage } from './pages/admin/MembersPage';
 import { SecurityPage } from './pages/admin/SecurityPage';
+import { StoragePage } from './pages/admin/StoragePage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { HomePage } from './pages/HomePage';
 import { JoinPage } from './pages/JoinPage';
@@ -49,6 +51,7 @@ export const routes: RouteObject[] = [
               { path: 'settings', element: <SpaceSettingsPage /> },
             ],
           },
+          { path: 'documents/:id', element: <DocumentPage /> },
           {
             path: 'admin',
             element: <RequireAdmin><Outlet /></RequireAdmin>,
@@ -57,6 +60,7 @@ export const routes: RouteObject[] = [
               { path: 'general', element: <GeneralPage /> },
               { path: 'members', element: <MembersPage /> },
               { path: 'security', element: <SecurityPage /> },
+              { path: 'storage', element: <StoragePage /> },
             ],
           },
           { path: '*', element: <NotFoundPage /> },

@@ -8,7 +8,7 @@ Lore is an open source workspace where technical teams write, import, organize, 
 
 ## Status
 
-Under development, towards v0.1. Working today: the initial setup in the browser, sign-in, invitations, password reset links, My account, and the administration of the organization (members, roles, security settings). Spaces, import, the document viewer and search come next. The scope of the first releases is described under [Planned releases](#planned-releases).
+Under development, towards v0.1. Working today: the initial setup in the browser, sign-in, invitations, password reset links, My account, and the administration of the organization (members, roles, security settings); spaces with their folders and roles (reader, contributor, maintainer); and the import of PDF, Word, Markdown and text files, whose text is extracted in a separate process, with documents restricted to a few people. The document viewer and search come next. The scope of the first releases is described under [Planned releases](#planned-releases).
 
 A first preview, [0.1.0-alpha.1](https://github.com/dada-core/lore/releases/tag/v0.1.0-alpha.1), lets you try the installation with what works today. It is not meant for production: its data may not carry over to the next version.
 

@@ -1,6 +1,10 @@
 lore:
   setup-code: test-setup-code
   log-level: WARN
+  files-path: target/test-files
+  # The extraction processes run in the tests that need them only (ExtractionTest).
+  extraction:
+    enabled: false
 
 spring:
   session:

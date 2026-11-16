@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { api, call } from '../api/client';
 import { keys, queryClient } from '../api/queryClient';
+import { refreshAllDocuments } from '../documents/documents';
 import { errorMessage } from '../i18n/errors';
 import { useI18n } from '../i18n/i18n';
 import { View } from '../layouts/AppShell';
@@ -139,7 +140,10 @@ function DangerZone({ space }: { space: Space }) {
       : call(() => api.POST('/api/v1/spaces/{id}/archive', { params: { path: { id: space.id } } })),
     onSuccess: () => notify(t(archived ? 'spaceSettings.unarchived' : 'spaceSettings.archived')),
     onError: (error) => notify(errorMessage(i18n, error)),
-    onSettled: () => void refreshSpaces(),
+    onSettled: () => {
+      void refreshSpaces();
+      void refreshAllDocuments();
+    },
   });
 
   return (
@@ -189,6 +193,7 @@ function DeleteSpaceDialog({ space, onClose }: { space: Space; onClose: () => vo
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: keys.space(space.slug) });
       void refreshSpaces();
+      void refreshAllDocuments();
       notify(t('deleteSpace.deleted', { name: space.name }));
       navigate('/spaces', { replace: true });
     },
