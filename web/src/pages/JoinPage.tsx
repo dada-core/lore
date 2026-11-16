@@ -6,6 +6,7 @@ import { errorMessage } from '../i18n/errors';
 import { useI18n } from '../i18n/i18n';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { signOut, startSession, useSession } from '../session/session';
+import { SpaceIcon, SpaceRolePill } from '../spaces/spaces';
 import { useDocumentTitle } from '../ui/bits';
 import { Callout, checks, hasProblems, message, problemsOf, TextField, useFocusFirstProblem, validate, type Problems } from '../ui/forms';
 import { Spinner } from '../ui/Icon';
@@ -105,6 +106,16 @@ function JoinForm({ token, invitation }: { token: string; invitation: Schemas['I
       <p className="lead">
         {invitation.invitedBy ? t('join.lead', { name: invitation.invitedBy, role }) : t('join.leadAnonymous', { role })}
       </p>
+      {invitation.spaces.length > 0 && (
+        <div className="join-spaces">
+          <p>{t('join.spaces')}</p>
+          <ul>
+            {invitation.spaces.map((space) => (
+              <li key={space.id}><SpaceIcon space={space} />{space.name}<SpaceRolePill role={space.role} /></li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="auth-panel">
         {user ? (
           <div className="form">

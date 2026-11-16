@@ -37,6 +37,16 @@ export function roleClass(role: Role): string {
   return ROLE_COLOURS[role];
 }
 
+/** The value, once it has stopped changing for {@link delay} milliseconds: for a search field. */
+export function useDebounced<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
 /** Sets the title of the browser tab: "Sign in – Lore". */
 export function useDocumentTitle(title: string): void {
   useEffect(() => {

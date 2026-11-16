@@ -3,6 +3,7 @@ package com.dadacore.lore.web;
 import java.util.Map;
 
 import com.dadacore.lore.shared.ApiException;
+import com.dadacore.lore.shared.Checks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -12,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -45,9 +47,15 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(problem);
     }
 
-    /** A malformed identifier in the address designates nothing: same answer as a missing one. */
+    /**
+     * A malformed identifier in the address designates nothing: same answer as a missing one. A
+     * malformed query parameter is refused as a field error.
+     */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<ProblemDetail> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
+        if (!exception.getParameter().hasParameterAnnotation(PathVariable.class)) {
+            return handleApiException(Checks.rejected(exception.getName(), "invalid_value"));
+        }
         ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
         problem.setProperty("code", "not_found");
         return problem(problem);

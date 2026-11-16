@@ -28,6 +28,8 @@ class OpenApiTests extends ApiTest {
         assertThat(response.status()).isEqualTo(200);
         assertThat(response.json().get("paths").has("/api/v1/auth/login")).isTrue();
         assertThat(response.json().get("paths").has("/api/v1/admin/members/{id}")).isTrue();
+        assertThat(response.json().get("paths").has("/api/v1/spaces/{spaceId}/members/{userId}")).isTrue();
+        assertThat(response.json().get("paths").has("/api/v1/spaces/{spaceId}/folders/{folderId}")).isTrue();
         // The Viewer parameter is filled by the server.
         assertThat(response.json().toString()).doesNotContain("\"name\":\"viewer\"");
 

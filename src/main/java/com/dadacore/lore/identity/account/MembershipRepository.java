@@ -4,6 +4,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -76,6 +78,19 @@ public class MembershipRepository {
                 .optional();
     }
 
+    public List<MemberRow> members(UUID organizationId, Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return List.of();
+        }
+        List<Object> params = new ArrayList<>();
+        params.add(organizationId);
+        params.addAll(userIds);
+        return jdbc.sql(MEMBER_COLUMNS + " where m.organization_id = ? and m.user_id in (" + placeholders(userIds.size()) + ")")
+                .params(params)
+                .query(MembershipRepository::member)
+                .list();
+    }
+
     /**
      * Members ordered by name. The search ignores case and accents, on the name and the address.
      */
@@ -83,12 +98,7 @@ public class MembershipRepository {
         StringBuilder where = new StringBuilder(" where m.organization_id = ?");
         List<Object> params = new ArrayList<>();
         params.add(organizationId);
-        if (search != null && !search.isBlank()) {
-            String pattern = "%" + escapeLike(search.strip()) + "%";
-            where.append(" and (unaccent(u.display_name) ilike unaccent(?) or u.email ilike ?)");
-            params.add(pattern);
-            params.add(pattern);
-        }
+        where.append(matching(search, params));
         long total = jdbc.sql("select count(*) from membership m join user_account u on u.id = m.user_id" + where)
                 .params(params)
                 .query(Long.class)
@@ -102,6 +112,42 @@ public class MembershipRepository {
                 .query(MembershipRepository::member)
                 .list();
         return new PageResponse<>(items, page.page(), page.size(), total);
+    }
+
+    /**
+     * Active members ordered by name, matching the search as {@link #members(UUID, String, PageQuery)} does.
+     *
+     * @param excluded people not to return, for example those already in a space
+     */
+    public List<MemberRow> activeMembers(UUID organizationId, String search, Collection<UUID> excluded, int limit) {
+        StringBuilder where = new StringBuilder(" where m.organization_id = ? and u.status = 'ACTIVE'");
+        List<Object> params = new ArrayList<>();
+        params.add(organizationId);
+        where.append(matching(search, params));
+        if (!excluded.isEmpty()) {
+            where.append(" and u.id not in (").append(placeholders(excluded.size())).append(")");
+            params.addAll(excluded);
+        }
+        params.add(limit);
+        return jdbc.sql(MEMBER_COLUMNS + where + " order by lower(unaccent(u.display_name)), u.id limit ?")
+                .params(params)
+                .query(MembershipRepository::member)
+                .list();
+    }
+
+    /** The search on the name and the address, ignoring case and accents; adds its parameters. */
+    private static String matching(String search, List<Object> params) {
+        if (search == null || search.isBlank()) {
+            return "";
+        }
+        String pattern = "%" + escapeLike(search.strip()) + "%";
+        params.add(pattern);
+        params.add(pattern);
+        return " and (unaccent(u.display_name) ilike unaccent(?) or u.email ilike ?)";
+    }
+
+    private static String placeholders(int count) {
+        return String.join(", ", Collections.nCopies(count, "?"));
     }
 
     private static String escapeLike(String text) {
