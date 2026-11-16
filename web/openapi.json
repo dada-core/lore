@@ -26,6 +26,22 @@
         "required" : [ "displayName", "email", "interfaceLocale", "passwordMinLength", "role" ],
         "type" : "object"
       },
+      "Candidate" : {
+        "properties" : {
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "required" : [ "displayName", "email", "id" ],
+        "type" : "object"
+      },
       "CompleteRequest" : {
         "properties" : {
           "password" : {
@@ -97,6 +113,32 @@
         "required" : [ "currentPassword", "email" ],
         "type" : "object"
       },
+      "FolderName" : {
+        "properties" : {
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "name" ],
+        "type" : "object"
+      },
+      "FolderView" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "createdAt", "id", "name" ],
+        "type" : "object"
+      },
       "InspectRequest" : {
         "properties" : {
           "token" : {
@@ -127,9 +169,15 @@
           },
           "role" : {
             "type" : "string"
+          },
+          "spaces" : {
+            "items" : {
+              "$ref" : "#/components/schemas/InvitedSpace"
+            },
+            "type" : "array"
           }
         },
-        "required" : [ "expiresAt", "organizationName", "passwordMinLength", "role" ],
+        "required" : [ "expiresAt", "organizationName", "passwordMinLength", "role", "spaces" ],
         "type" : "object"
       },
       "InvitationView" : {
@@ -154,9 +202,34 @@
           },
           "role" : {
             "type" : "string"
+          },
+          "spaces" : {
+            "items" : {
+              "$ref" : "#/components/schemas/InvitedSpace"
+            },
+            "type" : "array"
           }
         },
-        "required" : [ "createdAt", "expiresAt", "id", "role" ],
+        "required" : [ "createdAt", "expiresAt", "id", "role", "spaces" ],
+        "type" : "object"
+      },
+      "InvitedSpace" : {
+        "properties" : {
+          "color" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "color", "id", "name", "role" ],
         "type" : "object"
       },
       "JoinRequest" : {
@@ -232,9 +305,46 @@
           },
           "role" : {
             "type" : "string"
+          },
+          "spaces" : {
+            "items" : {
+              "$ref" : "#/components/schemas/SpaceInvitation"
+            },
+            "type" : [ "array", "null" ]
           }
         },
         "required" : [ "role" ],
+        "type" : "object"
+      },
+      "NewMember" : {
+        "properties" : {
+          "role" : {
+            "type" : "string"
+          },
+          "userId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "required" : [ "role", "userId" ],
+        "type" : "object"
+      },
+      "NewSpace" : {
+        "properties" : {
+          "color" : {
+            "type" : [ "string", "null" ]
+          },
+          "description" : {
+            "type" : [ "string", "null" ]
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "name" ],
         "type" : "object"
       },
       "OpenSession" : {
@@ -516,6 +626,115 @@
         "required" : [ "publicUrlFromEnvironment", "required" ],
         "type" : "object"
       },
+      "SpaceChanges" : {
+        "properties" : {
+          "color" : {
+            "type" : [ "string", "null" ]
+          },
+          "description" : {
+            "type" : [ "string", "null" ]
+          },
+          "name" : {
+            "type" : [ "string", "null" ]
+          },
+          "slug" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "type" : "object"
+      },
+      "SpaceInvitation" : {
+        "properties" : {
+          "role" : {
+            "type" : "string"
+          },
+          "spaceId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "required" : [ "role", "spaceId" ],
+        "type" : "object"
+      },
+      "SpaceMemberView" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "addedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string"
+          },
+          "self" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "active", "addedAt", "displayName", "email", "id", "role", "self" ],
+        "type" : "object"
+      },
+      "SpaceRoleChange" : {
+        "properties" : {
+          "role" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "role" ],
+        "type" : "object"
+      },
+      "SpaceView" : {
+        "properties" : {
+          "archivedAt" : {
+            "format" : "date-time",
+            "type" : [ "string", "null" ]
+          },
+          "color" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "description" : {
+            "type" : [ "string", "null" ]
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "lastActivityAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "memberCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string"
+          },
+          "slug" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "color", "createdAt", "id", "lastActivityAt", "memberCount", "name", "role", "slug" ],
+        "type" : "object"
+      },
       "VerifyCodeRequest" : {
         "properties" : {
           "setupCode" : {
@@ -540,7 +759,7 @@
   "paths" : {
     "/api/v1/account" : {
       "get" : {
-        "operationId" : "get_1",
+        "operationId" : "get_2",
         "responses" : {
           "200" : {
             "content" : {
@@ -733,7 +952,7 @@
         "tags" : [ "Administration" ]
       },
       "post" : {
-        "operationId" : "create",
+        "operationId" : "create_2",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -783,7 +1002,7 @@
     },
     "/api/v1/admin/members" : {
       "get" : {
-        "operationId" : "list",
+        "operationId" : "list_3",
         "parameters" : [ {
           "in" : "query",
           "name" : "q",
@@ -826,7 +1045,7 @@
     },
     "/api/v1/admin/members/{id}" : {
       "delete" : {
-        "operationId" : "remove",
+        "operationId" : "remove_1",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -845,7 +1064,7 @@
         "tags" : [ "Administration" ]
       },
       "patch" : {
-        "operationId" : "changeRole",
+        "operationId" : "changeRole_1",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -967,7 +1186,7 @@
     },
     "/api/v1/admin/organization" : {
       "get" : {
-        "operationId" : "get",
+        "operationId" : "get_1",
         "responses" : {
           "200" : {
             "content" : {
@@ -984,7 +1203,7 @@
         "tags" : [ "Administration" ]
       },
       "patch" : {
-        "operationId" : "update",
+        "operationId" : "update_1",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -1253,6 +1472,548 @@
         },
         "summary" : "Check the setup code printed in the server logs",
         "tags" : [ "Initial setup" ]
+      }
+    },
+    "/api/v1/spaces" : {
+      "get" : {
+        "operationId" : "list",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "archived",
+          "required" : false,
+          "schema" : {
+            "default" : false,
+            "type" : "boolean"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/SpaceView"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The spaces the person can see, by name; archived=true lists the archived ones",
+        "tags" : [ "Spaces" ]
+      },
+      "post" : {
+        "operationId" : "create",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/NewSpace"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SpaceView"
+                }
+              }
+            },
+            "description" : "Created"
+          }
+        },
+        "summary" : "Create a space: its creator becomes its maintainer",
+        "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/by-slug/{slug}" : {
+      "get" : {
+        "operationId" : "bySlug",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "slug",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SpaceView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A space, by its address in the interface",
+        "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/{id}" : {
+      "delete" : {
+        "operationId" : "delete_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Delete a space, with its folders and its members",
+        "tags" : [ "Spaces" ]
+      },
+      "get" : {
+        "operationId" : "get",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SpaceView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A space",
+        "tags" : [ "Spaces" ]
+      },
+      "patch" : {
+        "operationId" : "update",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SpaceChanges"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SpaceView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Change the name, description, address or color of a space",
+        "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/{id}/archive" : {
+      "post" : {
+        "operationId" : "archive",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SpaceView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Archive a space: only its maintainers still see it, and it can no longer be changed",
+        "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/{id}/unarchive" : {
+      "post" : {
+        "operationId" : "unarchive",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SpaceView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Make an archived space active again",
+        "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/{spaceId}/folders" : {
+      "get" : {
+        "operationId" : "list_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/FolderView"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Folders of a space, in the order of their creation",
+        "tags" : [ "Spaces" ]
+      },
+      "post" : {
+        "operationId" : "create_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FolderName"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FolderView"
+                }
+              }
+            },
+            "description" : "Created"
+          }
+        },
+        "summary" : "Create a folder",
+        "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/{spaceId}/folders/{folderId}" : {
+      "delete" : {
+        "operationId" : "delete",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "folderId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Delete a folder",
+        "tags" : [ "Spaces" ]
+      },
+      "patch" : {
+        "operationId" : "rename",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "folderId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FolderName"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FolderView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Rename a folder",
+        "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/{spaceId}/members" : {
+      "get" : {
+        "operationId" : "list_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/SpaceMemberView"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Members of a space, by name",
+        "tags" : [ "Spaces" ]
+      },
+      "post" : {
+        "operationId" : "add",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/NewMember"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SpaceMemberView"
+                }
+              }
+            },
+            "description" : "Created"
+          }
+        },
+        "summary" : "Add a member of the organization to the space",
+        "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/{spaceId}/members/candidates" : {
+      "get" : {
+        "operationId" : "candidates",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "q",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/Candidate"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Members of the organization who can be added to the space; q searches names and addresses",
+        "tags" : [ "Spaces" ]
+      }
+    },
+    "/api/v1/spaces/{spaceId}/members/{userId}" : {
+      "delete" : {
+        "operationId" : "remove",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "userId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "summary" : "Remove a member from the space, or leave it",
+        "tags" : [ "Spaces" ]
+      },
+      "patch" : {
+        "operationId" : "changeRole",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "spaceId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "userId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SpaceRoleChange"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SpaceMemberView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Change the role of a member in the space",
+        "tags" : [ "Spaces" ]
       }
     }
   },

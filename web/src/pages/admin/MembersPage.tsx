@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { api, ApiError, call, type Role, type Schemas } from '../../api/client';
 import { keys, queryClient } from '../../api/queryClient';
@@ -7,7 +7,7 @@ import { errorMessage } from '../../i18n/errors';
 import { useI18n } from '../../i18n/i18n';
 import { SettingsView } from '../../layouts/SettingsView';
 import { useUser } from '../../session/session';
-import { Avatar, HorizontalScroll, RolePill, roleClass } from '../../ui/bits';
+import { Avatar, HorizontalScroll, RolePill, roleClass, useDebounced } from '../../ui/bits';
 import { Callout } from '../../ui/forms';
 import { Icon, Spinner } from '../../ui/Icon';
 import { Menu, MenuItem, MenuSeparator } from '../../ui/Menu';
@@ -19,15 +19,6 @@ type Confirmation = { kind: 'disable' | 'remove'; member: Member };
 
 const PAGE_SIZE = 50;
 const ROLES: Role[] = ['MEMBER', 'ADMIN', 'OWNER'];
-
-function useDebounced(value: string, delay: number): string {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delay);
-    return () => window.clearTimeout(timer);
-  }, [value, delay]);
-  return debounced;
-}
 
 function membersQuery(q: string, page: number) {
   return {
@@ -57,9 +48,11 @@ export function MembersPage() {
   const members = useQuery({ ...membersQuery(q, page), placeholderData: keepPreviousData });
   const invitations = useQuery({ queryKey: keys.invitations, queryFn: () => call(() => api.GET('/api/v1/admin/invitations')) });
 
+  // Removing or disabling someone also changes the members of the spaces.
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: keys.allMembers });
     void queryClient.invalidateQueries({ queryKey: keys.invitations });
+    void queryClient.invalidateQueries({ queryKey: keys.allSpaces });
   };
 
   const changeRole = useMutation({
@@ -275,6 +268,9 @@ function PendingInvitations({ invitations, onChanged }: { invitations: Schemas['
                   <div className="list-title">{label}<RolePill role={invitation.role} /></div>
                   <div className="list-sub">
                     {invitation.createdBy ? t('invitations.meta', { name: invitation.createdBy, date }) : t('invitations.metaAnonymous', { date })}
+                    {invitation.spaces.length > 0 && (
+                      <>{' · '}{t('invitations.spaces', { names: invitation.spaces.map((space) => space.name).join(', ') })}</>
+                    )}
                   </div>
                 </div>
                 <button

@@ -13,6 +13,11 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { SetupPage } from './pages/SetupPage';
 import { CrashPage, Root } from './Root';
 import { GuestOnly, RequireAdmin, RequireUser } from './session/guards';
+import { SpaceLibraryPage } from './spaces/SpaceLibraryPage';
+import { SpaceMembersPage } from './spaces/SpaceMembersPage';
+import { SpaceRoute } from './spaces/SpaceRoute';
+import { SpaceSettingsPage } from './spaces/SpaceSettingsPage';
+import { SpacesPage } from './spaces/SpacesPage';
 
 /**
  * The addresses of the interface, all in English whatever the language of the page. The server
@@ -34,6 +39,16 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <HomePage /> },
           { path: 'account', element: <AccountPage /> },
+          { path: 'spaces', element: <SpacesPage /> },
+          {
+            path: 'spaces/:slug',
+            element: <SpaceRoute />,
+            children: [
+              { index: true, element: <SpaceLibraryPage /> },
+              { path: 'members', element: <SpaceMembersPage /> },
+              { path: 'settings', element: <SpaceSettingsPage /> },
+            ],
+          },
           {
             path: 'admin',
             element: <RequireAdmin><Outlet /></RequireAdmin>,

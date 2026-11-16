@@ -23,4 +23,13 @@ export const keys = {
   members: (q: string, page: number) => ['admin', 'members', q, page] as const,
   allMembers: ['admin', 'members'] as const,
   invitations: ['admin', 'invitations'] as const,
+  allSpaces: ['spaces'] as const,
+  spaceLists: ['spaces', 'list'] as const,
+  spaces: (archived: boolean) => ['spaces', 'list', archived] as const,
+  spaceBySlug: ['spaces', 'slug'] as const,
+  space: (slug: string) => ['spaces', 'slug', slug] as const,
+  spaceMembers: (id: string) => ['spaces', id, 'members'] as const,
+  allSpaceCandidates: (id: string) => ['spaces', id, 'candidates'] as const,
+  spaceCandidates: (id: string, q: string) => ['spaces', id, 'candidates', q] as const,
+  folders: (id: string) => ['spaces', id, 'folders'] as const,
 };

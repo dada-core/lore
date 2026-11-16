@@ -62,7 +62,8 @@ describe('access', () => {
     });
     const router = open('/account');
 
-    expect(await screen.findByRole('heading', { name: 'Connexion à Lore' })).toBeInTheDocument();
+    // On a cold start of the tests, the sign-in screen can take more than the default second to appear.
+    expect(await screen.findByRole('heading', { name: 'Connexion à Lore' }, { timeout: 5000 })).toBeInTheDocument();
     expect(router.state.location.search).toBe('?next=%2Faccount');
     expect(screen.getByText('DadaGroup')).toBeInTheDocument();
 
@@ -157,6 +158,7 @@ describe('links received', () => {
       'POST /api/v1/invitations/inspect': () => json({
         organizationName: 'DadaGroup', invitedBy: 'Wilfried Kouakou', role: 'MEMBER', email: null,
         expiresAt: '2026-11-19T10:00:00Z', passwordMinLength: 12,
+        spaces: [{ id: '0193b1f2-0000-7000-8000-0000000000a1', name: 'Infrastructure', color: '#13705E', role: 'CONTRIBUTOR' }],
       }),
       'POST /api/v1/invitations/accept': async (request) => {
         const body = (await request.json()) as { token: string; displayName: string };
@@ -168,6 +170,8 @@ describe('links received', () => {
     const router = open('/join#jeton');
     expect(await screen.findByRole('heading', { name: 'Rejoindre DadaGroup' })).toBeInTheDocument();
     expect(screen.getByText('Wilfried Kouakou vous invite avec le rôle Membre.')).toBeInTheDocument();
+    expect(screen.getByText('Infrastructure')).toBeInTheDocument();
+    expect(screen.getByText('Contributeur')).toBeInTheDocument();
 
     const browser = userEvent.setup();
     await browser.type(screen.getByLabelText('Nom complet'), 'Amenan Souaga');

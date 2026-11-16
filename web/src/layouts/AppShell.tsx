@@ -1,9 +1,12 @@
+import { useQuery } from '@tanstack/react-query';
 import { createContext, Fragment, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate, useSearchParams } from 'react-router';
 import { useI18n } from '../i18n/i18n';
 import { signOut, useSession, useUser } from '../session/session';
+import { CreateSpaceDialog } from '../spaces/CreateSpaceDialog';
+import { SpaceIcon, spaceBySlug, useCreateSpace, useSpaces } from '../spaces/spaces';
 import { Avatar, initials, useVerticalFade } from '../ui/bits';
-import { Icon } from '../ui/Icon';
+import { Icon, type IconName } from '../ui/Icon';
 import { Menu, MenuItem, MenuLink, MenuSeparator } from '../ui/Menu';
 import { nextTheme, setTheme, usePanel, useTheme } from '../ui/preferences';
 import { useNotify } from '../ui/Toast';
@@ -24,7 +27,9 @@ function isTyping(): boolean {
 /** The structure of every screen once signed in: sidebar on the left, the view on the right. */
 export function AppShell() {
   const { t } = useI18n();
-  const { pathname } = useLocation();
+  const { pathname, state } = useLocation();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const [navShown, toggleNav] = usePanel('nav');
   // The drawer of small screens belongs to the view it was opened on: a new view closes it.
   const [drawerPath, setDrawerPath] = useState<string | null>(null);
@@ -49,6 +54,8 @@ export function AppShell() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && drawerOpen) {
+        // Escape closes an open window first; the drawer behind it stays open.
+        if (document.querySelector('dialog[open]')) return;
         setDrawerOpen(false);
         return;
       }
@@ -62,6 +69,18 @@ export function AppShell() {
     return () => document.removeEventListener('keydown', onKey);
   }, [drawerOpen, setDrawerOpen, toggleNav]);
 
+  // "Create a space" opens from the sidebar, the home page and the list of spaces.
+  const creatingSpace = params.get('open') === 'create-space';
+  const closeCreateSpace = () => {
+    if ((state as { createSpace?: boolean } | null)?.createSpace) {
+      navigate(-1);
+      return;
+    }
+    const next = new URLSearchParams(params);
+    next.delete('open');
+    setParams(next, { replace: true });
+  };
+
   return (
     <ShellContext value={{ showNavigation }}>
       <div className={navShown ? 'app' : 'app hide-nav'}>
@@ -73,6 +92,7 @@ export function AppShell() {
           <Outlet />
         </div>
       </div>
+      {creatingSpace && <CreateSpaceDialog onClose={closeCreateSpace} />}
     </ShellContext>
   );
 }
@@ -134,6 +154,7 @@ function Sidebar({ open, onFold }: { open: boolean; onFold: () => void }) {
             </li>
           </ul>
         </nav>
+        <SpacesNav />
         {user.isAdmin && (
           <nav aria-labelledby="nav-organization">
             <div className="nav-head"><h2 id="nav-organization">{t('nav.organization')}</h2></div>
@@ -162,6 +183,70 @@ function Sidebar({ open, onFold }: { open: boolean; onFold: () => void }) {
         </button>
       </div>
     </aside>
+  );
+}
+
+/** The active spaces; the open one unfolds its pages. */
+function SpacesNav() {
+  const { t } = useI18n();
+  const spaces = useSpaces();
+  const createSpace = useCreateSpace();
+  const open = useMatch('/spaces/:slug/*')?.params.slug;
+  // An archived space is not in the list: the open one still shows, with the way to its settings.
+  // A space whose address just changed is in the list under the old one until it reloads.
+  const listed = spaces.data?.some((space) => space.slug === open) ?? false;
+  const opened = useQuery({ ...spaceBySlug(open ?? ''), enabled: !!open && spaces.isSuccess && !listed });
+  const list = spaces.data ?? [];
+  const extra = !listed && opened.data?.slug === open ? opened.data : undefined;
+  const entries = !extra
+    ? list
+    : list.some((space) => space.id === extra.id)
+      ? list.map((space) => (space.id === extra.id ? extra : space))
+      : [...list, extra];
+
+  const sub = (to: string, icon: IconName, label: string) => (
+    <li>
+      <NavLink className="nav-link" to={to} end>
+        <Icon name={icon} />
+        <span className="label">{label}</span>
+      </NavLink>
+    </li>
+  );
+
+  return (
+    <nav aria-labelledby="nav-spaces">
+      <div className="nav-head">
+        <h2 id="nav-spaces">{t('nav.spaces')}</h2>
+        <span className="nav-head-actions">
+          <Link className="icon-btn" to="/spaces" aria-label={t('nav.allSpaces')} title={t('nav.allSpaces')}>
+            <Icon name="grid" />
+          </Link>
+          <button type="button" className="icon-btn" onClick={createSpace} aria-label={t('nav.createSpace')} title={t('nav.createSpace')}>
+            <Icon name="plus" />
+          </button>
+        </span>
+      </div>
+      <ul className="nav">
+        {entries.map((space) => (
+          <li key={space.id}>
+            <Link className="nav-link" to={`/spaces/${space.slug}`}>
+              <SpaceIcon space={space} />
+              <span className="label">{space.name}</span>
+              {space.archivedAt && (
+                <span role="img" aria-label={t('space.archived')} title={t('space.archived')}><Icon name="archive" /></span>
+              )}
+            </Link>
+            {space.slug === open && (
+              <ul className="nav-sub">
+                {sub(`/spaces/${space.slug}`, 'file-text', t('nav.spaceDocuments'))}
+                {sub(`/spaces/${space.slug}/members`, 'users', t('nav.spaceMembers'))}
+                {space.role === 'MAINTAINER' && sub(`/spaces/${space.slug}/settings`, 'settings', t('nav.spaceSettings'))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 

@@ -118,8 +118,8 @@ class MembersService {
     }
 
     /**
-     * Removes the membership and closes the sessions. The account itself remains, so that its name
-     * stays attached to the versions it imported.
+     * Removes the membership, with the roles it gave in the spaces, and closes the sessions. The
+     * account itself remains, so that its name stays attached to the versions it imported.
      */
     @Transactional
     void remove(Viewer viewer, UUID memberId) {

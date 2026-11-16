@@ -101,4 +101,13 @@ public final class Checks {
                     .with("errors", List.copyOf(errors));
         }
     }
+
+    /**
+     * A single field to correct, found after the other checks, in the database for example:
+     * {@code throw Checks.rejected("slug", "slug_taken")}.
+     */
+    public static ApiException rejected(String field, String code) {
+        return new ApiException(HttpStatus.BAD_REQUEST, "invalid_request")
+                .with("errors", List.of(new FieldError(field, code, Map.of())));
+    }
 }

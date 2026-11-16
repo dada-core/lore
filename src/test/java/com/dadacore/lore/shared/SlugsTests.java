@@ -1,4 +1,4 @@
-package com.dadacore.lore.identity.organization;
+package com.dadacore.lore.shared;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

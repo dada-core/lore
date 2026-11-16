@@ -6,12 +6,16 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import com.dadacore.lore.audit.AuditEntry;
 import com.dadacore.lore.audit.AuditLog;
+import com.dadacore.lore.identity.InvitationSpaces;
+import com.dadacore.lore.identity.InvitedSpace;
 import com.dadacore.lore.identity.OrganizationRole;
+import com.dadacore.lore.identity.SpaceInvitation;
 import com.dadacore.lore.identity.Viewer;
 import com.dadacore.lore.identity.account.AccountStatus;
 import com.dadacore.lore.identity.account.MembershipRepository;
@@ -37,7 +41,8 @@ import org.springframework.transaction.annotation.Transactional;
  * default).
  *
  * <p>An optional address reserves the link to that person and lets administrators follow it as
- * "Invitation pending". The spaces to join will be added with the spaces themselves.
+ * "Invitation pending". The invitation can also add the person to spaces, with a role in each
+ * ("Spaces to join").
  */
 @Service
 class Invitations {
@@ -48,36 +53,47 @@ class Invitations {
     private final MembershipRepository memberships;
     private final PasswordHasher hasher;
     private final AuditLog audit;
+    private final InvitationSpaces invitationSpaces;
     private final Clock clock;
 
     Invitations(JdbcClient jdbc, OrganizationRepository organizations, UserAccountRepository accounts,
-            MembershipRepository memberships, PasswordHasher hasher, AuditLog audit, Clock clock) {
+            MembershipRepository memberships, PasswordHasher hasher, AuditLog audit,
+            InvitationSpaces invitationSpaces, Clock clock) {
         this.jdbc = jdbc;
         this.organizations = organizations;
         this.accounts = accounts;
         this.memberships = memberships;
         this.hasher = hasher;
         this.audit = audit;
+        this.invitationSpaces = invitationSpaces;
         this.clock = clock;
     }
 
     /**
      * @param email     the address the link is reserved to, if any
      * @param createdBy name of the person who created the link
+     * @param spaces    the spaces the person will join, with their role
      */
     record InvitationView(UUID id, String role, @Nullable String email, @Nullable String createdBy,
-            Instant createdAt, Instant expiresAt) {
+            Instant createdAt, Instant expiresAt, List<InvitedSpace> spaces) {
+
+        InvitationView withSpaces(List<InvitedSpace> joined) {
+            return new InvitationView(id, role, email, createdBy, createdAt, expiresAt, joined);
+        }
     }
 
     record CreatedInvitation(InvitationView invitation, String url) {
     }
 
-    /** @param email optional: reserves the link to this address */
-    record NewInvitation(String role, @Nullable String email) {
+    /**
+     * @param email  optional: reserves the link to this address
+     * @param spaces optional: the spaces to join, with a role in each
+     */
+    record NewInvitation(String role, @Nullable String email, @Nullable List<SpaceInvitation> spaces) {
     }
 
     record InvitationDetails(String organizationName, @Nullable String invitedBy, String role,
-            @Nullable String email, Instant expiresAt, int passwordMinLength) {
+            @Nullable String email, Instant expiresAt, int passwordMinLength, List<InvitedSpace> spaces) {
     }
 
     record JoinRequest(String token, String displayName, String email, String password) {
@@ -88,7 +104,7 @@ class Invitations {
 
     List<InvitationView> pending(Viewer viewer) {
         viewer.requireAdmin();
-        return jdbc.sql("""
+        List<InvitationView> invitations = jdbc.sql("""
                 select i.id, i.role, i.email, c.display_name as created_by, i.created_at, i.expires_at
                 from invitation i left join user_account c on c.id = i.created_by
                 where i.organization_id = ? and i.used_at is null and i.revoked_at is null and i.expires_at > ?
@@ -101,8 +117,14 @@ class Invitations {
                         rs.getString("email"),
                         rs.getString("created_by"),
                         rs.getTimestamp("created_at").toInstant(),
-                        rs.getTimestamp("expires_at").toInstant()))
+                        rs.getTimestamp("expires_at").toInstant(),
+                        List.of()))
                 .list();
+        Map<UUID, List<InvitedSpace>> spaces = invitationSpaces.spaces(
+                invitations.stream().map(InvitationView::id).toList());
+        return invitations.stream()
+                .map(invitation -> invitation.withSpaces(spaces.getOrDefault(invitation.id(), List.of())))
+                .toList();
     }
 
     @Transactional
@@ -137,13 +159,18 @@ class Invitations {
                         Timestamp.from(expiresAt))
                 .query(UUID.class)
                 .single();
+        List<InvitedSpace> spaces = request.spaces() == null || request.spaces().isEmpty()
+                ? List.of()
+                : invitationSpaces.attach(viewer, id, request.spaces());
         audit.record(AuditEntry.of(viewer.organizationId(), viewer.userId(), "invitation.created")
                 .resource("invitation", id)
                 .ip(viewer.ip())
                 .detail("role", role.name())
                 .detail("email", email)
+                .detail("spaces", names(spaces))
                 .build());
-        InvitationView view = new InvitationView(id, role.name(), email, viewer.displayName(), now, expiresAt);
+        InvitationView view = new InvitationView(id, role.name(), email, viewer.displayName(), now, expiresAt,
+                spaces);
         return new CreatedInvitation(view, baseUrl + "/join#" + token);
     }
 
@@ -168,8 +195,9 @@ class Invitations {
     InvitationDetails inspect(String token) {
         Valid valid = find(token, false).orElseThrow(Invitations::invalidLink);
         Organization organization = organizations.find(valid.organizationId()).orElseThrow(Invitations::invalidLink);
+        List<InvitedSpace> spaces = invitationSpaces.spaces(List.of(valid.id())).getOrDefault(valid.id(), List.of());
         return new InvitationDetails(organization.name(), valid.createdByName(), valid.role(), valid.email(),
-                valid.expiresAt(), organizations.settings(organization.id()).passwordMinLength());
+                valid.expiresAt(), organizations.settings(organization.id()).passwordMinLength(), spaces);
     }
 
     /**
@@ -219,6 +247,7 @@ class Invitations {
         }
         OrganizationRole role = OrganizationRole.valueOf(valid.role());
         memberships.add(valid.organizationId(), account.id(), role);
+        List<InvitedSpace> spaces = invitationSpaces.join(valid.id(), valid.organizationId(), account.id());
         accounts.recordLogin(account.id(), clock.instant());
         jdbc.sql("update invitation set used_at = now(), used_by = ? where id = ?")
                 .params(account.id(), valid.id())
@@ -230,6 +259,7 @@ class Invitations {
                 .detail("role", role.name())
                 .detail("invitedBy", valid.createdByName())
                 .detail("returning", former.isPresent())
+                .detail("spaces", names(spaces))
                 .build());
         return new Joined(account.id(), valid.organizationId(), settings.sessionTimeoutMinutes());
     }
@@ -252,6 +282,11 @@ class Invitations {
                         rs.getTimestamp("expires_at").toInstant(),
                         rs.getString("created_by_name")))
                 .optional();
+    }
+
+    /** The names of the spaces, for the audit log; null when there are none. */
+    private static @Nullable List<String> names(List<InvitedSpace> spaces) {
+        return spaces.isEmpty() ? null : spaces.stream().map(InvitedSpace::name).toList();
     }
 
     private static ApiException invalidLink() {

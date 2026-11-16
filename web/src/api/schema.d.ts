@@ -12,7 +12,7 @@ export interface paths {
             cookie?: never;
         };
         /** Profile and preferences of the signed-in person */
-        get: operations["get_1"];
+        get: operations["get_2"];
         put?: never;
         post?: never;
         delete?: never;
@@ -118,7 +118,7 @@ export interface paths {
         get: operations["pending"];
         put?: never;
         /** Create an invitation link */
-        post: operations["create"];
+        post: operations["create_2"];
         delete?: never;
         options?: never;
         head?: never;
@@ -150,7 +150,7 @@ export interface paths {
             cookie?: never;
         };
         /** Members of the organization, by name; q searches names and addresses */
-        get: operations["list"];
+        get: operations["list_3"];
         put?: never;
         post?: never;
         delete?: never;
@@ -170,11 +170,11 @@ export interface paths {
         put?: never;
         post?: never;
         /** Remove a member from the organization */
-        delete: operations["remove"];
+        delete: operations["remove_1"];
         options?: never;
         head?: never;
         /** Change the role of a member */
-        patch: operations["changeRole"];
+        patch: operations["changeRole_1"];
         trace?: never;
     };
     "/api/v1/admin/members/{id}/disable": {
@@ -236,14 +236,14 @@ export interface paths {
             cookie?: never;
         };
         /** Settings of the organization */
-        get: operations["get"];
+        get: operations["get_1"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         /** Change settings of the organization */
-        patch: operations["update"];
+        patch: operations["update_1"];
         trace?: never;
     };
     "/api/v1/auth/login": {
@@ -400,6 +400,183 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/spaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The spaces the person can see, by name; archived=true lists the archived ones */
+        get: operations["list"];
+        put?: never;
+        /** Create a space: its creator becomes its maintainer */
+        post: operations["create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spaces/by-slug/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A space, by its address in the interface */
+        get: operations["bySlug"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spaces/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A space */
+        get: operations["get"];
+        put?: never;
+        post?: never;
+        /** Delete a space, with its folders and its members */
+        delete: operations["delete_1"];
+        options?: never;
+        head?: never;
+        /** Change the name, description, address or color of a space */
+        patch: operations["update"];
+        trace?: never;
+    };
+    "/api/v1/spaces/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a space: only its maintainers still see it, and it can no longer be changed */
+        post: operations["archive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spaces/{id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make an archived space active again */
+        post: operations["unarchive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spaces/{spaceId}/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Folders of a space, in the order of their creation */
+        get: operations["list_2"];
+        put?: never;
+        /** Create a folder */
+        post: operations["create_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spaces/{spaceId}/folders/{folderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a folder */
+        delete: operations["delete"];
+        options?: never;
+        head?: never;
+        /** Rename a folder */
+        patch: operations["rename"];
+        trace?: never;
+    };
+    "/api/v1/spaces/{spaceId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Members of a space, by name */
+        get: operations["list_1"];
+        put?: never;
+        /** Add a member of the organization to the space */
+        post: operations["add"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spaces/{spaceId}/members/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Members of the organization who can be added to the space; q searches names and addresses */
+        get: operations["candidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/spaces/{spaceId}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a member from the space, or leave it */
+        delete: operations["remove"];
+        options?: never;
+        head?: never;
+        /** Change the role of a member in the space */
+        patch: operations["changeRole"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -412,6 +589,12 @@ export interface components {
             /** Format: int32 */
             passwordMinLength: number;
             role: string;
+        };
+        Candidate: {
+            displayName: string;
+            email: string;
+            /** Format: uuid */
+            id: string;
         };
         CompleteRequest: {
             password: string;
@@ -438,6 +621,16 @@ export interface components {
             currentPassword: string;
             email: string;
         };
+        FolderName: {
+            name: string;
+        };
+        FolderView: {
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
         InspectRequest: {
             token: string;
         };
@@ -450,6 +643,7 @@ export interface components {
             /** Format: int32 */
             passwordMinLength: number;
             role: string;
+            spaces: components["schemas"]["InvitedSpace"][];
         };
         InvitationView: {
             /** Format: date-time */
@@ -460,6 +654,14 @@ export interface components {
             expiresAt: string;
             /** Format: uuid */
             id: string;
+            role: string;
+            spaces: components["schemas"]["InvitedSpace"][];
+        };
+        InvitedSpace: {
+            color: string;
+            /** Format: uuid */
+            id: string;
+            name: string;
             role: string;
         };
         JoinRequest: {
@@ -489,6 +691,18 @@ export interface components {
         NewInvitation: {
             email?: string | null;
             role: string;
+            spaces?: components["schemas"]["SpaceInvitation"][] | null;
+        };
+        NewMember: {
+            role: string;
+            /** Format: uuid */
+            userId: string;
+        };
+        NewSpace: {
+            color?: string | null;
+            description?: string | null;
+            name: string;
+            slug?: string | null;
         };
         OpenSession: {
             browser?: string | null;
@@ -592,6 +806,48 @@ export interface components {
             publicUrlFromEnvironment: boolean;
             required: boolean;
         };
+        SpaceChanges: {
+            color?: string | null;
+            description?: string | null;
+            name?: string | null;
+            slug?: string | null;
+        };
+        SpaceInvitation: {
+            role: string;
+            /** Format: uuid */
+            spaceId: string;
+        };
+        SpaceMemberView: {
+            active: boolean;
+            /** Format: date-time */
+            addedAt: string;
+            displayName: string;
+            email: string;
+            /** Format: uuid */
+            id: string;
+            role: string;
+            self: boolean;
+        };
+        SpaceRoleChange: {
+            role: string;
+        };
+        SpaceView: {
+            /** Format: date-time */
+            archivedAt?: string | null;
+            color: string;
+            /** Format: date-time */
+            createdAt: string;
+            description?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            lastActivityAt: string;
+            /** Format: int32 */
+            memberCount: number;
+            name: string;
+            role: string;
+            slug: string;
+        };
         VerifyCodeRequest: {
             setupCode: string;
         };
@@ -604,7 +860,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    get_1: {
+    get_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -780,7 +1036,7 @@ export interface operations {
             };
         };
     };
-    create: {
+    create_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -824,7 +1080,7 @@ export interface operations {
             };
         };
     };
-    list: {
+    list_3: {
         parameters: {
             query?: {
                 q?: string;
@@ -848,7 +1104,7 @@ export interface operations {
             };
         };
     };
-    remove: {
+    remove_1: {
         parameters: {
             query?: never;
             header?: never;
@@ -868,7 +1124,7 @@ export interface operations {
             };
         };
     };
-    changeRole: {
+    changeRole_1: {
         parameters: {
             query?: never;
             header?: never;
@@ -960,7 +1216,7 @@ export interface operations {
             };
         };
     };
-    get: {
+    get_1: {
         parameters: {
             query?: never;
             header?: never;
@@ -980,7 +1236,7 @@ export interface operations {
             };
         };
     };
-    update: {
+    update_1: {
         parameters: {
             query?: never;
             header?: never;
@@ -1225,6 +1481,402 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list: {
+        parameters: {
+            query?: {
+                archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceView"][];
+                };
+            };
+        };
+    };
+    create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewSpace"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceView"];
+                };
+            };
+        };
+    };
+    bySlug: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceView"];
+                };
+            };
+        };
+    };
+    get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceView"];
+                };
+            };
+        };
+    };
+    delete_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpaceChanges"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceView"];
+                };
+            };
+        };
+    };
+    archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceView"];
+                };
+            };
+        };
+    };
+    unarchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceView"];
+                };
+            };
+        };
+    };
+    list_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderView"][];
+                };
+            };
+        };
+    };
+    create_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderName"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderView"];
+                };
+            };
+        };
+    };
+    delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+                folderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    rename: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+                folderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderName"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderView"];
+                };
+            };
+        };
+    };
+    list_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceMemberView"][];
+                };
+            };
+        };
+    };
+    add: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewMember"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceMemberView"];
+                };
+            };
+        };
+    };
+    candidates: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path: {
+                spaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Candidate"][];
+                };
+            };
+        };
+    };
+    remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    changeRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spaceId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpaceRoleChange"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceMemberView"];
+                };
             };
         };
     };
