@@ -84,7 +84,8 @@ echo "import check: a PDF imported and indexed in about $elapsed s"
 # The original comes back as it was imported, never compressed, never shown as a page.
 curl -fsS -b "$jar" -H 'Accept-Encoding: gzip' -D "$work/headers" -o "$work/downloaded.pdf" \
   "$base/api/v1/documents/$document/versions/1/file" || fail "download"
-cmp -s "$work/restore.pdf" "$work/downloaded.pdf" || fail "the file downloaded differs from the file imported"
+# sha256sum (coreutils) rather than cmp (diffutils), absent from minimal RHEL images.
+[ "$(sha256sum < "$work/restore.pdf")" = "$(sha256sum < "$work/downloaded.pdf")" ] || fail "the file downloaded differs from the file imported"
 grep -qi '^x-content-type-options: nosniff' "$work/headers" || fail "no nosniff on the original"
 ! grep -qi '^content-encoding:' "$work/headers" || fail "the original was compressed"
 echo "import check: the PDF downloaded is the file imported"
