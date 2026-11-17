@@ -13,11 +13,14 @@ import { fakeServer, json, noContent, organization } from '../test/server';
 import { ToastProvider } from '../ui/Toast';
 import { timing } from './documents';
 
+// pdf.js does not run in jsdom: its viewer is tested with a fake in reader.test.tsx.
+vi.mock('./reader/pdf', () => ({ ASSETS: '/pdfjs/', loadPdf: () => new Promise(() => {}) }));
+
 type Routes = Parameters<typeof fakeServer>[0];
 type View = ReturnType<typeof view>;
 
 const ID = 'd0000000-0000-7000-8000-000000000001';
-const readOnly = { edit: false, delete: false, manageAccess: false, retry: false };
+const readOnly = { edit: false, delete: false, manageAccess: false, retry: false, changeOwner: false };
 
 /** The page of a document; returns the bodies sent to it, by method. */
 function server(document: View, routes: Routes = {}) {
@@ -88,17 +91,21 @@ describe('page of a document', () => {
     expect(screen.getByText(/^Échec de l’extraction\s: le fichier est protégé par un mot de passe\. Retirez la protection, puis importez le fichier à nouveau\.$/))
       .toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Relancer' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Autres actions' })).not.toBeInTheDocument();
+    // Of the other actions, a reader has what does not change the document.
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Autres actions' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Copier le lien', 'Imprimer']);
+    await userEvent.setup().keyboard('{Escape}');
     expect(screen.queryByRole('button', { name: 'Modifier le titre' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /description/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/Lore n’affiche pas encore le contenu des documents/)).toBeInTheDocument();
+    // No content after a failure: the banner, and the original to download.
+    expect(screen.getByRole('link', { name: 'Télécharger l’original' })).toHaveAttribute('href', `/api/v1/documents/${ID}/versions/1/file`);
 
     const properties = screen.getByRole('complementary', { name: 'Propriétés' });
     expect(within(properties).getByText('Brouillon')).toBeInTheDocument();
     expect(within(properties).getByText('Eli Brou', { selector: '.who span' })).toBeInTheDocument();
     expect(within(properties).getByText('Sans catégorie')).toBeInTheDocument();
-    expect(within(properties).getByText('Word')).toBeInTheDocument();
-    expect(within(properties).getByText(/^1,2\sMo$/)).toBeInTheDocument();
+    // The format says its size: "Word, 1,2 Mo".
+    expect(within(properties).getByText(/^Word, 1,2\sMo$/)).toBeInTheDocument();
     expect(within(properties).getByText('Échec')).toBeInTheDocument();
     expect(within(properties).getByText('Version 1')).toBeInTheDocument();
     expect(within(properties).getByText('plan-reprise-2026.docx')).toBeInTheDocument();
@@ -133,7 +140,7 @@ describe('page of a document', () => {
 
     expect(await screen.findByText(/^Document numérisé\s: son texte n’a pas pu être extrait/)).toBeInTheDocument();
     expect(screen.getByText(/^Texte tronqué/)).toBeInTheDocument();
-    expect(within(screen.getByRole('complementary', { name: 'Propriétés' })).getByText('PDF, 4 pages')).toBeInTheDocument();
+    expect(within(screen.getByRole('complementary', { name: 'Propriétés' })).getByText(/^PDF, 4 pages, 1,2\sMo$/)).toBeInTheDocument();
 
     await browser.click(screen.getAllByRole('button', { name: 'Ajouter une description' })[0]);
     const dialog = await screen.findByRole('dialog', { name: 'Ajouter une description' });
@@ -403,6 +410,9 @@ describe('around the documents', () => {
     server(view({}, { extractionStatus: 'INDEXED', sectionCount: 14, language: 'fr' }), {
       [`GET /api/v1/spaces/${SPACE_ID}/documents`]: () => json(page([item({ id: ID })])),
       [`GET /api/v1/spaces/${SPACE_ID}/documents/summary`]: () => json({ total: 1, inProgress: 0, scanned: 0, failed: 0, folders: [{ folderId: null, count: 1 }] }),
+      [`GET /api/v1/documents/${ID}/versions/1/rendering`]: () => json({
+        number: 1, renderer: 1, part: 1, partCount: 1, truncated: false, outline: [], html: '<section id="h-0"><p>Texte.</p></section>',
+      }),
     });
     const router = open('/spaces/infrastructure');
     const browser = userEvent.setup();
@@ -410,6 +420,7 @@ describe('around the documents', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe(`/documents/${ID}`));
     expect(await screen.findByRole('heading', { level: 1, name: 'Plan reprise 2026' })).toBeInTheDocument();
     expect(screen.getByText(/^Indexé$/)).toBeInTheDocument();
-    expect(screen.getByText('Français', { selector: 'dd' })).toBeInTheDocument();
+    expect(within(screen.getByRole('complementary', { name: 'Propriétés' })).getByText('Français')).toBeInTheDocument();
+    expect(await screen.findByText('Texte.')).toBeInTheDocument();
   });
 });

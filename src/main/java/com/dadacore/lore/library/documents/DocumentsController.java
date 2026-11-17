@@ -1,5 +1,6 @@
 package com.dadacore.lore.library.documents;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,9 +14,11 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -39,11 +42,13 @@ class DocumentsController {
     private final Documents documents;
     private final Imports imports;
     private final StorageSettings storage;
+    private final Reading reading;
 
-    DocumentsController(Documents documents, Imports imports, StorageSettings storage) {
+    DocumentsController(Documents documents, Imports imports, StorageSettings storage, Reading reading) {
         this.documents = documents;
         this.imports = imports;
         this.storage = storage;
+        this.reading = reading;
     }
 
     /**
@@ -59,15 +64,18 @@ class DocumentsController {
     }
 
     @GetMapping("/api/v1/spaces/{spaceId}/documents")
-    @Operation(summary = "A page of the documents of a space the person can see, by folder then most recent first; "
+    @Operation(summary = "A page of the documents of a space the person can see, by folder then in the order asked: "
+            + "sort is updated (default, most recent first), title, category, status or size, direction asc or desc; "
             + "folder=none lists those without a folder, ids (100 at most) follows given documents")
     PageResponse<DocumentItem> list(Viewer viewer, @PathVariable UUID spaceId,
             @RequestParam(required = false) @Nullable String folder,
             @RequestParam(required = false) @Nullable Boolean restricted,
             @RequestParam(required = false) @Nullable List<UUID> ids,
+            @RequestParam(required = false) @Nullable String sort,
+            @RequestParam(required = false) @Nullable String direction,
             @RequestParam(required = false) @Nullable Integer page,
             @RequestParam(required = false) @Nullable Integer size) {
-        return documents.list(viewer, spaceId, folder, restricted, ids, PageQuery.of(page, size));
+        return documents.list(viewer, spaceId, folder, restricted, ids, sort, direction, PageQuery.of(page, size));
     }
 
     @GetMapping("/api/v1/spaces/{spaceId}/documents/summary")
@@ -87,9 +95,43 @@ class DocumentsController {
     }
 
     @GetMapping("/api/v1/documents/{id}")
-    @Operation(summary = "A document, its current version and what the person may do with it")
+    @Operation(summary = "A document, its current version and what the person may do with it; "
+            + "its opening is recorded in the audit log once an hour")
     DocumentView get(Viewer viewer, @PathVariable UUID id) {
         return documents.get(viewer, id);
+    }
+
+    @GetMapping("/api/v1/documents/recent")
+    @Operation(summary = "The documents the person opened last and still sees, most recent first (size: 3 by default, 10 at most)")
+    List<Documents.RecentDocument> recent(Viewer viewer, @RequestParam(required = false) @Nullable Integer size) {
+        return documents.recent(viewer, size);
+    }
+
+    @GetMapping("/api/v1/documents/{id}/versions/{number}/rendering")
+    @Operation(summary = "A version laid out for reading (Markdown, Word, text), cleaned: the part asked (part), "
+            + "or the part that holds an anchor (anchor), or the first; the outline of the whole document unless "
+            + "outline=false. 409 extraction_pending, 409 no_rendering (a PDF, a failure)")
+    ResponseEntity<Reading.RenderingView> rendering(Viewer viewer, @PathVariable UUID id, @PathVariable int number,
+            @RequestParam(required = false) @Nullable Integer part,
+            @RequestParam(required = false) @Nullable String anchor,
+            @RequestParam(required = false, defaultValue = "true") boolean outline) {
+        return reading.rendering(viewer, id, number, part, anchor, outline);
+    }
+
+    @GetMapping("/api/v1/documents/{id}/versions/{number}/file")
+    @Operation(summary = "The original file of a version, under its name: attachment (default), or inline for a PDF; "
+            + "ranges (206, 416), If-Range, If-None-Match (304), 410 file_missing. A download is recorded in the audit log")
+    void file(Viewer viewer, @PathVariable UUID id, @PathVariable int number,
+            @RequestParam(required = false) @Nullable String disposition, HttpServletRequest request,
+            HttpServletResponse response) throws IOException {
+        reading.file(viewer, id, number, disposition, request, response);
+    }
+
+    @PutMapping("/api/v1/documents/{id}/owner")
+    @Operation(summary = "Hand the document over to another member of the space, at least a contributor: "
+            + "its maintainers, or its owner")
+    DocumentView changeOwner(Viewer viewer, @PathVariable UUID id, @RequestBody Documents.OwnerChange body) {
+        return documents.changeOwner(viewer, id, body);
     }
 
     @PatchMapping("/api/v1/documents/{id}")

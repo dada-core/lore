@@ -1,10 +1,15 @@
 package com.dadacore.lore.library.documents;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -50,6 +55,14 @@ public class Documents {
     static final int MAX_IDS = 100;
     static final int ATTENTION = 20;
     static final Set<String> PASSING_FAILURES = ExtractionResults.PASSING_FAILURES;
+    /** A page opened again within the hour is the same view: decision 25 of the reader. */
+    static final Duration VIEW_ONCE = Duration.ofHours(1);
+    static final String VIEWED = "document.viewed";
+    /** "Resume" on the home page: 3 documents by default, 10 at most. */
+    static final int RECENT = 3;
+    static final int MAX_RECENT = 10;
+    /** The views looked at for "Resume", before the documents the person no longer sees are left out. */
+    static final int RECENT_VIEWS = 50;
 
     /** The categories of a document. */
     enum Category {
@@ -114,13 +127,22 @@ public class Documents {
     record FolderDocuments(@Nullable UUID folderId, long count) {
     }
 
+    /** @param userId the new person in charge of the document */
+    record OwnerChange(@Nullable UUID userId) {
+    }
+
+    /** A document the person opened lately, for "Resume" on the home page. */
+    record RecentDocument(UUID id, String title, DocumentViews.SpaceLink space, DocumentViews.@Nullable FolderLink folder,
+            String status, Instant viewedAt) {
+    }
+
     /** A document imported by the person, still in progress or failed, for the home page. */
     record AttentionItem(UUID id, String title, DocumentViews.SpaceLink space, String extractionStatus,
             @Nullable String extractionError) {
     }
 
     PageResponse<DocumentItem> list(Viewer viewer, UUID spaceId, @Nullable String folder, @Nullable Boolean restricted,
-            @Nullable List<UUID> ids, PageQuery page) {
+            @Nullable List<UUID> ids, @Nullable String sort, @Nullable String direction, PageQuery page) {
         Space space = spaces.open(viewer, spaceId, SpaceRole.READER).space();
         Checks checks = Checks.start();
         boolean root = "none".equals(folder);
@@ -136,10 +158,23 @@ public class Documents {
         if (chosen.size() > MAX_IDS) {
             checks.fail("ids", "too_many", Map.of("max", MAX_IDS));
         }
+        DocumentRepository.Sort order = sort == null ? DocumentRepository.Sort.UPDATED
+                : checks.oneOf("sort", sort.toUpperCase(Locale.ROOT), DocumentRepository.Sort.class);
+        Boolean descending = null;
+        if (direction != null) {
+            if (direction.equals("asc") || direction.equals("desc")) {
+                descending = direction.equals("desc");
+            } else {
+                checks.fail("direction", "invalid_value");
+            }
+        }
         checks.orThrow();
+        // The latest first; titles, categories, statuses and sizes in their order.
+        boolean desc = descending != null ? descending : order == DocumentRepository.Sort.UPDATED;
         DocumentRepository.Filter filter = new DocumentRepository.Filter(folderId, root, restricted, chosen);
         SqlCondition readable = readable(viewer);
-        List<DocumentRepository.Row> rows = documents.list(space.id(), readable, filter, page.offset(), page.size());
+        List<DocumentRepository.Row> rows = documents.list(space.id(), readable, filter, order, desc, page.offset(),
+                page.size());
         return new PageResponse<>(views.items(space.organizationId(), rows), page.page(), page.size(),
                 documents.count(space.id(), readable, filter));
     }
@@ -151,8 +186,11 @@ public class Documents {
                 summary.folders().stream().map(f -> new FolderDocuments(f.folderId(), f.count())).toList());
     }
 
+    /** The page of a document: its opening is a view, recorded once an hour at most. */
     DocumentView get(Viewer viewer, UUID id) {
         Opened opened = open(viewer, id);
+        audit.recordOnce(entry(viewer, opened, VIEWED).detail("version", opened.row().version().number()).build(),
+                VIEW_ONCE);
         return view(viewer, opened, null);
     }
 
@@ -277,6 +315,97 @@ public class Documents {
         return accessView(reload(viewer, opened));
     }
 
+    /**
+     * Hands the document over to another member of the space, at least a contributor: its
+     * maintainers, or its owner while a contributor. Field errors {@code userId:required},
+     * {@code userId:not_space_member} (a disabled account too), {@code userId:not_contributor};
+     * {@code 403 maintainer_or_owner_only}.
+     */
+    @Transactional
+    DocumentView changeOwner(Viewer viewer, UUID id, OwnerChange change) {
+        Opened opened = openForChange(viewer, id, SpaceRole.READER);
+        if (!access.canManageAccess(viewer, opened.ref(), opened.role())) {
+            throw ApiException.forbidden("maintainer_or_owner_only");
+        }
+        UUID userId = change.userId();
+        if (userId == null) {
+            throw Checks.rejected("userId", "required");
+        }
+        SpaceRole role = members.roleOf(opened.space().ref(), userId).orElse(null);
+        OrganizationMember person = people.find(opened.space().organizationId(), List.of(userId)).get(userId);
+        if (role == null || person == null || !person.active()) {
+            throw Checks.rejected("userId", "not_space_member");
+        }
+        if (!role.includes(SpaceRole.CONTRIBUTOR)) {
+            throw Checks.rejected("userId", "not_contributor");
+        }
+        UUID before = opened.row().ownerId();
+        if (userId.equals(before)) {
+            return view(viewer, opened, null);
+        }
+        documents.changeOwner(opened.row().id(), userId);
+        spaces.touch(opened.space().id());
+        OrganizationMember previous = before == null ? null
+                : people.find(opened.space().organizationId(), List.of(before)).get(before);
+        audit.record(entry(viewer, opened, "document.owner_changed")
+                .detail("from", before)
+                .detail("fromName", previous == null ? null : previous.displayName())
+                .detail("to", userId)
+                .detail("toName", person.displayName())
+                .detail("restricted", opened.row().restricted())
+                .build());
+        Opened after = reload(viewer, opened);
+        // Who hands over a restricted document they were not chosen for no longer sees it.
+        Optional<SpaceRole> still = access.role(viewer, after.ref());
+        if (still.isEmpty()) {
+            return views.view(after.space(), after.row(), DocumentActions.NONE, null);
+        }
+        return view(viewer, new Opened(after.row(), after.space(), still.get()), null);
+    }
+
+    /** The documents the person opened last and still sees, most recent first. Field error {@code size:out_of_range}. */
+    List<RecentDocument> recent(Viewer viewer, @Nullable Integer size) {
+        int limit = size == null ? RECENT : size;
+        if (limit < 1 || limit > MAX_RECENT) {
+            Checks.start().fail("size", "out_of_range", Map.of("min", 1, "max", MAX_RECENT)).orThrow();
+        }
+        Map<UUID, Instant> viewed = new LinkedHashMap<>();
+        for (com.dadacore.lore.audit.AuditLog.Recent recent : audit.recent(viewer.organizationId(), viewer.userId(), VIEWED,
+                RECENT_VIEWS)) {
+            try {
+                viewed.putIfAbsent(UUID.fromString(recent.resourceId()), recent.at());
+            } catch (IllegalArgumentException e) {
+                // Not the identifier of a document: left out.
+            }
+        }
+        if (viewed.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, DocumentRepository.Row> rows = new HashMap<>();
+        for (DocumentRepository.Row row : documents.findAll(viewer.organizationId(), viewed.keySet(), readable(viewer))) {
+            rows.put(row.id(), row);
+        }
+        Map<UUID, DocumentViews.SpaceLink> spaceLinks = new HashMap<>();
+        List<RecentDocument> recent = new ArrayList<>();
+        for (Map.Entry<UUID, Instant> entry : viewed.entrySet()) {
+            DocumentRepository.Row row = rows.get(entry.getKey());
+            if (row == null) {
+                // Deleted, restricted since, or in a space the person left.
+                continue;
+            }
+            DocumentViews.SpaceLink space = spaceLinks.computeIfAbsent(row.spaceId(), spaceId -> {
+                Space found = spaces.find(viewer, spaceId);
+                return new DocumentViews.SpaceLink(found.id(), found.name(), found.slug(), found.color());
+            });
+            recent.add(new RecentDocument(row.id(), row.title(), space, views.folder(row.folderId()), row.status(),
+                    entry.getValue()));
+            if (recent.size() == limit) {
+                break;
+            }
+        }
+        return recent;
+    }
+
     List<AttentionItem> attention(Viewer viewer) {
         List<DocumentRepository.Row> rows = documents.attention(viewer.organizationId(), viewer.userId(), readable(viewer),
                 ATTENTION);
@@ -303,12 +432,14 @@ public class Documents {
         boolean active = !opened.space().archived();
         boolean contributor = opened.role().includes(SpaceRole.CONTRIBUTOR);
         DocumentRepository.Version version = opened.row().version();
+        boolean manageAccess = active && access.canManageAccess(viewer, opened.ref(), opened.role());
         DocumentActions actions = new DocumentActions(
                 active && contributor,
                 active && access.canDelete(viewer, opened.ref(), opened.role()),
-                active && access.canManageAccess(viewer, opened.ref(), opened.role()),
+                manageAccess,
                 active && contributor && "FAILED".equals(version.extractionStatus())
-                        && PASSING_FAILURES.contains(version.extractionError()));
+                        && PASSING_FAILURES.contains(version.extractionError()),
+                manageAccess);
         return views.view(opened.space(), opened.row(), actions, duplicateOf);
     }
 

@@ -184,6 +184,11 @@ public class FileStore {
         return path;
     }
 
+    /** True when the stored file is on the disk: a backup restored without its files lacks them. */
+    public boolean exists(UUID organizationId, String sha256) {
+        return Files.isRegularFile(path(organizationId, sha256));
+    }
+
     /** Deletes a stored file, once no version uses it any more. */
     public void delete(UUID organizationId, String sha256) {
         try {

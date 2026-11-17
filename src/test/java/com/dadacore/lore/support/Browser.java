@@ -155,6 +155,37 @@ public final class Browser {
         }
     }
 
+    /** An answer read as bytes, its headers as they came: nothing decompressed or parsed. */
+    public record Raw(int status, java.net.http.HttpHeaders headers, byte[] body) {
+
+        public String header(String name) {
+            return headers.firstValue(name).orElse(null);
+        }
+
+        public String text() {
+            return new String(body, java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
+
+    /** A request with the headers given as {@code "name", "value"} pairs, the answer read as bytes. */
+    public Raw raw(String method, String path, String... headers) {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path))
+                .header("User-Agent", userAgent)
+                .method(method, HttpRequest.BodyPublishers.noBody());
+        for (int i = 0; i < headers.length; i += 2) {
+            request.header(headers[i], headers[i + 1]);
+        }
+        try {
+            HttpResponse<byte[]> response = http.send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
+            return new Raw(response.statusCode(), response.headers(), response.body());
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
     private String csrfToken() {
         String token = cookie("XSRF-TOKEN");
         if (token == null) {

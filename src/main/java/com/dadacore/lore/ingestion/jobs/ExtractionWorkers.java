@@ -15,6 +15,7 @@ import com.dadacore.lore.LoreProperties;
 import com.dadacore.lore.ingestion.Extraction;
 import com.dadacore.lore.ingestion.ExtractionHealth;
 import com.dadacore.lore.ingestion.ExtractionResults;
+import com.dadacore.lore.ingestion.Rendering;
 import com.dadacore.lore.storage.FileStore;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -61,13 +62,13 @@ class ExtractionWorkers implements SmartLifecycle, ExtractionHealth {
         }
     }
 
-    /** The result of an extraction never weighs more: 10 million characters, titles and JSON included. */
-    static final long MAX_RESULT_BYTES = 100L * 1024 * 1024;
+    static final long MAX_RESULT_BYTES = Extraction.MAX_RESULT_BYTES;
 
     private static final Logger log = LoggerFactory.getLogger(ExtractionWorkers.class);
     private static final Set<String> PASSING = ExtractionResults.PASSING_FAILURES;
     private static final long POLL_MILLIS = 5_000;
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final String PDF = "application/pdf";
 
     private final ExtractionJobs jobs;
     private final ExtractionSignal signal;
@@ -258,12 +259,30 @@ class ExtractionWorkers implements SmartLifecycle, ExtractionHealth {
                     // More than the text kept could ever weigh: built to exhaust the application.
                     return new Outcome.Failed("corrupt");
                 }
-                return new Outcome.Extracted(JSON.readValue(output.toFile(), Extraction.class));
+                Extraction read = JSON.readValue(output.toFile(), Extraction.class);
+                return new Outcome.Extracted(read.withRendering(cleanRendering(job, read)));
             } catch (IOException | JacksonException e) {
                 // Announced but unreadable: tried again with a new process.
                 log.warn("Unreadable result for the version {}: {}", job.versionId(), e.toString());
                 close();
                 return new Outcome.Passing("extractor_crashed");
+            }
+        }
+
+        /**
+         * The rendering cleaned here, before the transaction that records it: the process reads
+         * hostile files, and a long rendering takes seconds to clean. A PDF has none.
+         */
+        private @Nullable Rendering cleanRendering(ExtractionJobs.Job job, Extraction extraction) {
+            if (PDF.equals(job.mediaType())) {
+                return null;
+            }
+            try {
+                return RenderingPolicy.clean(extraction.rendering());
+            } catch (RuntimeException e) {
+                // The text stays searchable; the document shows its banner and its file only.
+                log.warn("Rendering of the version {} left out: {}", job.versionId(), e.toString());
+                return null;
             }
         }
 

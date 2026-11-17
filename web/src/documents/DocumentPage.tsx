@@ -1,21 +1,21 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { api, ApiError, call } from '../api/client';
 import { keys, queryClient } from '../api/queryClient';
 import { errorMessage } from '../i18n/errors';
 import { useI18n } from '../i18n/i18n';
-import { View, type Crumb } from '../layouts/AppShell';
+import { isTyping, View, type Crumb } from '../layouts/AppShell';
 import { ConfirmDialog } from '../pages/admin/MemberDialogs';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { SpaceIcon } from '../spaces/spaces';
-import { Avatar, useDocumentTitle } from '../ui/bits';
+import { Avatar, copyText, useDocumentTitle } from '../ui/bits';
 import { Callout, checks, hasProblems, message, problemsOf, TextField, validate, type Problems } from '../ui/forms';
 import { Icon, Spinner } from '../ui/Icon';
 import { Menu, MenuItem, MenuSeparator } from '../ui/Menu';
 import { usePanel } from '../ui/preferences';
 import { useNotify } from '../ui/Toast';
-import { AccessDialog, DescriptionDialog, MoveDialog } from './DocumentDialogs';
+import { AccessDialog, DescriptionDialog, LinkDialog, MoveDialog, OwnerDialog } from './DocumentDialogs';
 import {
   CATEGORIES,
   categoryName,
@@ -36,14 +36,21 @@ import {
   whileExtracting,
   type Document,
 } from './documents';
+import { Outline, type Navigation, type OutlineItem } from './reader/Outline';
+import { RenderedDocument } from './reader/RenderedDocument';
+import { documentLink, readTarget, sectionLink } from './reader/target';
 
 const MAX_TITLE = 200;
-type Dialog = 'access' | 'move' | 'delete' | 'description';
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+type Dialog = 'access' | 'move' | 'delete' | 'description' | 'owner';
+
+// pdf.js and its viewer are loaded only when a PDF is opened.
+const PdfViewer = lazy(() => import('./reader/PdfViewer'));
 
 /**
- * The page of a document, without its content for now (the reader comes later): its title,
- * the state of its extraction, its description and what was extracted, and its properties, its
- * access and its version on the side. Only what the person may do is offered.
+ * The page of a document: its title and the banners that matter, then its content, the rendering
+ * of a Markdown, Word or text document or the PDF itself, opened at the place of the address; its
+ * properties, access, versions and outline on the side. Only what the person may do is offered.
  */
 export function DocumentPage() {
   const i18n = useI18n();
@@ -74,13 +81,55 @@ function DocumentView({ document }: { document: Document }) {
   const { t } = i18n;
   const notify = useNotify();
   const navigate = useNavigate();
+  const location = useLocation();
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [editing, setEditing] = useState(false);
   const [propsShown, toggleProps] = usePanel('props');
   // Followed during this visit: the end of the extraction is then told to screen readers.
   const [followed, setFollowed] = useState(document.currentVersion.extractionStatus === 'PENDING');
+  const [outline, setOutline] = useState<OutlineItem[]>([]);
+  const [reading, setReading] = useState<string | null>(null);
+  const [notice, setNotice] = useState<'missing' | null>(null);
+  const [link, setLink] = useState<{ title: string; url: string } | null>(null);
+  const navigation = useRef<Navigation | null>(null);
   const { actions, space, folder, currentVersion: version } = document;
   useDocumentTitle(document.title);
+  // ]: the panel of the properties, as [ folds the sidebar; not while typing nor in a window.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== ']' || event.ctrlKey || event.metaKey || event.altKey || isTyping()) return;
+      if (globalThis.document.querySelector('dialog[open]')) return;
+      event.preventDefault();
+      toggleProps();
+    };
+    globalThis.document.addEventListener('keydown', onKey);
+    return () => globalThis.document.removeEventListener('keydown', onKey);
+  }, [toggleProps]);
+  // This opening is a view: "Resume" on the home page shows it next time.
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: keys.recentDocuments });
+  }, [document.id]);
+  // The place of the address: the reader opens there. A window opened over the page
+  // (?open=import) changes the address without reloading the reader.
+  const [target, setTarget] = useState(() => readTarget(location.search, location.hash));
+  // The place shown: the address follows it (outline, links of the document), and a link to
+  // another place of the same document, followed afterwards, leads there.
+  const shown = useRef(target.place);
+  useEffect(() => {
+    const next = readTarget(location.search, location.hash);
+    if (!next.place || next.place === shown.current) return;
+    shown.current = next.place;
+    setTarget(next);
+    setNotice(null);
+    if (next.version === null || next.version === version.number) navigation.current?.go(next.place, next.query);
+  }, [location.search, location.hash, version.number]);
+  const followPlace = useCallback((place: string) => {
+    shown.current = place;
+    navigate({ pathname: location.pathname, search: location.search, hash: place }, { replace: true, preventScrollReset: true });
+  }, [navigate, location.pathname, location.search]);
+  const otherVersion = target.version !== null && target.version !== version.number;
+  const pdf = isPdf(version.mediaType);
+  const fileUrl = `/api/v1/documents/${document.id}/versions/${version.number}/file`;
 
   const libraryOf = (folderId: string | null) => `/spaces/${space.slug}?folder=${folderId ?? 'none'}`;
   const crumbs: Crumb[] = [
@@ -126,6 +175,20 @@ function DocumentView({ document }: { document: Document }) {
     },
   });
 
+  // Copied when the browser allows it; shown in a window otherwise (http:// on an internal network).
+  const copyLink = useCallback(async (url: string, section: boolean) => {
+    if (await copyText(url)) notify(t(section ? 'reader.sectionLinkCopied' : 'common.linkCopied'));
+    else setLink({ title: t(section ? 'reader.sectionLinkTitle' : 'reader.linkTitle'), url });
+  }, [notify, t]);
+  const copySection = useCallback(
+    (place: string) => void copyLink(sectionLink(document.id, version.number, place), true),
+    [copyLink, document.id, version.number],
+  );
+  const print = () => {
+    if (pdf) window.open(`${fileUrl}?disposition=inline`, '_blank', 'noopener');
+    else window.print();
+  };
+
   const status = version.extractionStatus;
   const fix = failureFix(i18n, version.extractionError);
   const outcome = status === 'INDEXED'
@@ -134,11 +197,29 @@ function DocumentView({ document }: { document: Document }) {
       ? t('document.scanned')
       : status === 'FAILED' ? `${t('failure.line', { cause: failureCause(i18n, version.extractionError) })}${fix ? ` ${fix}` : ''}` : '';
   const toggleLabel = propsShown ? t('document.hideProps') : t('document.showProps');
-  const menu = (actions.manageAccess || actions.edit || actions.delete) && (
+  const foundTitle = outline.find((item) => item.key === target.place)?.title;
+  const foundAt = target.page !== null
+    ? t('reader.atPage', { page: target.page })
+    : foundTitle && t('reader.atSection', { title: foundTitle });
+  const found = target.fromSearch && target.query.trim() !== '' && target.place !== null && notice !== 'missing' && !otherVersion;
+  const shortQuery = target.query.length > 80 ? `${target.query.slice(0, 80)}…` : target.query;
+  // A link made for another version opens at the top: the versions arrive with a later version of Lore.
+  const reader = otherVersion ? { ...target, place: null, page: null, query: '' } : target;
+
+  const menu = (
     <Menu align="end" label={t('document.moreActions')} trigger={<Icon name="dots" />}>
       {actions.manageAccess && <MenuItem icon="lock" onSelect={() => setDialog('access')}>{t('document.manageAccess')}</MenuItem>}
       {actions.edit && <MenuItem icon="folder" onSelect={() => setDialog('move')}>{t('document.move')}</MenuItem>}
-      {actions.delete && (actions.manageAccess || actions.edit) && <MenuSeparator />}
+      {actions.changeOwner && <MenuItem icon="user" onSelect={() => setDialog('owner')}>{t('document.changeOwner')}</MenuItem>}
+      {(actions.manageAccess || actions.edit || actions.changeOwner) && <MenuSeparator />}
+      <MenuItem icon="link" onSelect={() => void copyLink(documentLink(document.id), false)}>{t('reader.copyLink')}</MenuItem>
+      {pdf && version.fileAvailable && (
+        <MenuItem icon="external" onSelect={() => window.open(`${fileUrl}?disposition=inline`, '_blank', 'noopener')}>
+          {t('reader.openInBrowser')}
+        </MenuItem>
+      )}
+      {(!pdf || version.fileAvailable) && <MenuItem icon="print" onSelect={print}>{t('reader.print')}</MenuItem>}
+      {actions.delete && <MenuSeparator />}
       {actions.delete && (
         <MenuItem icon="trash" danger onSelect={() => { remove.reset(); setDialog('delete'); }}>{t('document.delete')}</MenuItem>
       )}
@@ -150,8 +231,13 @@ function DocumentView({ document }: { document: Document }) {
       crumbs={crumbs}
       actions={(
         <>
+          {version.fileAvailable && (
+            <a className="icon-btn" href={fileUrl} aria-label={t('reader.download')} title={t('reader.download')}>
+              <Icon name="download" />
+            </a>
+          )}
           {menu}
-          <button type="button" className="icon-btn" onClick={toggleProps} aria-label={toggleLabel} title={toggleLabel} aria-expanded={propsShown} aria-controls="document-props">
+          <button type="button" className="icon-btn" onClick={toggleProps} aria-label={toggleLabel} title={`${toggleLabel} (])`} aria-keyshortcuts="]" aria-expanded={propsShown} aria-controls="document-props">
             <Icon name="sidebar-right" />
           </button>
         </>
@@ -163,6 +249,15 @@ function DocumentView({ document }: { document: Document }) {
             <div className="sr-only" role="status">
               {followed && status !== 'PENDING' && `${t('document.extracted')} ${outcome}`}
             </div>
+            {found && (
+              <div className="callout callout-found" role="status">
+                <Icon name="highlight" />
+                <p>{foundAt ? t('reader.found', { query: shortQuery, place: foundAt }) : t('reader.foundHere', { query: shortQuery })}</p>
+              </div>
+            )}
+            {notice === 'missing' && <Callout role="status">{t('reader.missing')}</Callout>}
+            {otherVersion && <Callout role="status">{t('reader.changed', { version: target.version ?? 0 })}</Callout>}
+            {!version.fileAvailable && <Callout tone="error">{t('reader.fileMissing')}</Callout>}
             {status === 'PENDING' && (
               <div className="callout" role="status">
                 <Spinner />
@@ -197,13 +292,15 @@ function DocumentView({ document }: { document: Document }) {
                 </div>
               </Callout>
             )}
-            {version.textTruncated && <Callout tone="warn">{t('document.truncated')}</Callout>}
+            {version.textTruncated && (
+              <Callout tone="warn">{t('document.truncated')}{!pdf && <> {t('reader.truncatedRest')}</>}</Callout>
+            )}
 
             {editing ? (
               <TitleForm document={document} onDone={() => setEditing(false)} />
             ) : (
               <div className="doc-title-row">
-                <h1 className="doc-title">{document.title}</h1>
+                <h1 className="doc-title" lang={version.language === 'en' ? 'en' : undefined}>{document.title}</h1>
                 {actions.edit && (
                   <button type="button" className="icon-btn" onClick={() => setEditing(true)} aria-label={t('document.editTitle')} title={t('document.editTitle')}>
                     <Icon name="pencil" />
@@ -216,46 +313,86 @@ function DocumentView({ document }: { document: Document }) {
               <span>{t('document.version', { number: version.number })}</span>
               <span>{t('document.updated', { when: i18n.relative(document.updatedAt) })}</span>
               {document.restricted && <span className="status"><Icon name="lock" className="lock" />{t('library.restricted')}</span>}
+              {version.language === 'en' && <span className="tag-lang" title={t('language.en')}>EN</span>}
             </div>
+            <div className="print-only print-head">
+              <span>{t(`docStatus.${document.status as 'DRAFT'}`)}</span>
+              <span>{t('document.version', { number: version.number })}</span>
+              <span>{t('reader.printedOn', { date: i18n.date(new Date()) })}</span>
+            </div>
+            {version.mediaType === DOCX && status === 'INDEXED' && (
+              <p className="doc-note">
+                {t('reader.wordSimplified')}
+                {version.fileAvailable && <> <a className="link" href={fileUrl}>{t('reader.download')}</a></>}
+              </p>
+            )}
 
-            <section className="doc-section" aria-labelledby="document-description">
-              <h2 id="document-description">
-                {t('document.description')}
+            {document.description ? (
+              <div className="doc-description-row">
+                <p className="doc-description">{document.description}</p>
                 {actions.edit && (
-                  <button type="button" className="link" onClick={() => setDialog('description')}>
-                    {t(document.description ? 'document.editDescription' : 'document.addDescription')}
-                  </button>
+                  <button type="button" className="link" onClick={() => setDialog('description')}>{t('document.editDescription')}</button>
                 )}
-              </h2>
-              {document.description
-                ? <p className="doc-description">{document.description}</p>
-                : <p className="muted">{t('document.noDescription')}</p>}
-            </section>
+              </div>
+            ) : actions.edit && (
+              <button type="button" className="link add-description" onClick={() => setDialog('description')}>{t('document.addDescription')}</button>
+            )}
 
-            <section className="doc-section" aria-labelledby="document-text">
-              <h2 id="document-text">{t('document.text')}</h2>
-              {status === 'INDEXED' || status === 'SCANNED' ? (
-                <dl className="facts">
-                  {version.pageCount != null && <div><dt>{t('document.pages')}</dt><dd className="num">{version.pageCount}</dd></div>}
-                  {version.sectionCount != null && <div><dt>{t('document.sections')}</dt><dd className="num">{version.sectionCount}</dd></div>}
-                  <div><dt>{t('document.language')}</dt><dd>{languageName(i18n, version.language) ?? t('document.languageUnknown')}</dd></div>
-                  {version.extractedAt && <div><dt>{t('document.extractedAt')}</dt><dd>{i18n.date(version.extractedAt)}</dd></div>}
-                </dl>
-              ) : (
-                <p className="muted">{t('document.notExtracted')}</p>
+            <div className="doc-body">
+              {status !== 'FAILED' && pdf && version.fileAvailable && (
+                <Suspense fallback={<div className="grid-empty" role="status"><Spinner /><span className="sr-only">{t('reader.loading')}</span></div>}>
+                  <PdfViewer
+                    document={document}
+                    target={reader}
+                    scanned={status === 'SCANNED'}
+                    navigationRef={navigation}
+                    onOutline={setOutline}
+                    onNotice={setNotice}
+                  />
+                </Suspense>
               )}
-            </section>
-
-            <Callout>{t('document.reader')}</Callout>
+              {!pdf && status === 'PENDING' && <p className="muted">{t('reader.pendingContent')}</p>}
+              {!pdf && status === 'INDEXED' && (
+                <RenderedDocument
+                  key={version.id}
+                  document={document}
+                  target={reader}
+                  navigationRef={navigation}
+                  onOutline={setOutline}
+                  onReading={setReading}
+                  onCopySection={copySection}
+                  onNotice={setNotice}
+                  onShown={followPlace}
+                />
+              )}
+            </div>
           </div>
         </div>
 
-        <Properties document={document} onDialog={setDialog} onCategory={(category) => changeCategory.mutate(category)} />
+        <Properties
+          document={document}
+          outline={outline}
+          reading={reading}
+          navigationRef={navigation}
+          onDialog={setDialog}
+          onCategory={(category) => changeCategory.mutate(category)}
+        />
       </div>
 
       {dialog === 'access' && <AccessDialog document={document} onClose={() => setDialog(null)} />}
       {dialog === 'move' && <MoveDialog document={document} onClose={() => setDialog(null)} />}
       {dialog === 'description' && <DescriptionDialog document={document} onClose={() => setDialog(null)} />}
+      {dialog === 'owner' && (
+        <OwnerDialog
+          document={document}
+          onClose={() => setDialog(null)}
+          onHandedOver={(name) => {
+            void queryClient.invalidateQueries({ queryKey: keys.document(document.id), refetchType: 'none' });
+            notify(t('owner.handedOver', { name }));
+            navigate(libraryOf(folder?.id ?? null), { replace: true });
+          }}
+        />
+      )}
       {dialog === 'delete' && (
         <ConfirmDialog
           title={t('document.deleteTitle', { title: document.title })}
@@ -267,6 +404,7 @@ function DocumentView({ document }: { document: Document }) {
           onClose={() => setDialog(null)}
         />
       )}
+      {link && <LinkDialog title={link.title} link={link.url} onClose={() => setLink(null)} />}
     </View>
   );
 }
@@ -328,23 +466,30 @@ function TitleForm({ document, onDone }: { document: Document; onDone: () => voi
   );
 }
 
-/** The panel on the right: properties, access, version. */
-function Properties({ document, onDialog, onCategory }: {
+/** The panel on the right: properties, access, versions and the outline of the document. */
+function Properties({ document, outline, reading, navigationRef, onDialog, onCategory }: {
   document: Document;
+  outline: OutlineItem[];
+  reading: string | null;
+  navigationRef: RefObject<Navigation | null>;
   onDialog: (dialog: Dialog) => void;
   onCategory: (category: string) => void;
 }) {
   const i18n = useI18n();
   const { t } = i18n;
+  const notify = useNotify();
   const { actions, space, folder, currentVersion: version } = document;
   const access = useQuery({
     queryKey: keys.documentAccess(document.id),
     queryFn: () => call(() => api.GET('/api/v1/documents/{id}/access', { params: { path: { id: document.id } } })),
   });
   const folderName = folder?.name ?? t('library.noFolder');
-  const format = isPdf(version.mediaType) && version.pageCount != null
-    ? `${formatName(i18n, version.mediaType)}, ${i18n.tp('document.pageCount', version.pageCount)}`
-    : formatName(i18n, version.mediaType);
+  // "PDF, 312 pages, 24,8 Mo", "Markdown, 14 sections, 18 Ko".
+  const counted = isPdf(version.mediaType) && version.pageCount != null
+    ? i18n.tp('document.pageCount', version.pageCount)
+    : version.sectionCount != null && version.extractionStatus === 'INDEXED' ? i18n.tp('document.sectionCount', version.sectionCount) : null;
+  const format = [formatName(i18n, version.mediaType), counted, sizeText(i18n, version.sizeBytes)].filter(Boolean).join(', ');
+  const fileUrl = `/api/v1/documents/${document.id}/versions/${version.number}/file`;
 
   return (
     <aside className="props" id="document-props" aria-label={t('document.properties')}>
@@ -352,7 +497,21 @@ function Properties({ document, onDialog, onCategory }: {
         <h2>{t('document.properties')}</h2>
         <dl>
           <div className="prop"><dt>{t('document.prop.status')}</dt><dd><span className="prop-val prop-static"><StatusLabel status={document.status} /></span></dd></div>
-          <div className="prop"><dt>{t('document.prop.owner')}</dt><dd><span className="prop-val prop-static"><Owner owner={document.owner} /></span></dd></div>
+          <div className="prop">
+            <dt>{t('document.prop.owner')}</dt>
+            <dd>
+              {actions.changeOwner ? (
+                <>
+                  <button type="button" className="prop-val" aria-describedby="owner-change" onClick={() => onDialog('owner')}>
+                    <Owner owner={document.owner} />
+                  </button>
+                  <span className="sr-only" id="owner-change">{t('document.changeOwner')}</span>
+                </>
+              ) : (
+                <span className="prop-val prop-static"><Owner owner={document.owner} /></span>
+              )}
+            </dd>
+          </div>
           <div className="prop">
             <dt>{t('document.prop.category')}</dt>
             <dd>
@@ -401,12 +560,15 @@ function Properties({ document, onDialog, onCategory }: {
             <dd><span className="prop-val prop-static"><FormatIcon mediaType={version.mediaType} /><span>{format}</span></span></dd>
           </div>
           <div className="prop">
-            <dt>{t('document.prop.size')}</dt>
-            <dd><span className="prop-val prop-static">{sizeText(i18n, version.sizeBytes)}</span></dd>
-          </div>
-          <div className="prop">
             <dt>{t('document.prop.indexing')}</dt>
-            <dd><span className="prop-val prop-static"><IndexPill document={version} /></span></dd>
+            <dd>
+              <span className="prop-val prop-static prop-stack">
+                <IndexPill document={version} />
+                {version.extractedAt && version.extractionStatus !== 'PENDING' && (
+                  <span className="help">{t('document.extractedOn', { date: i18n.date(version.extractedAt) })}</span>
+                )}
+              </span>
+            </dd>
           </div>
         </dl>
       </section>
@@ -449,8 +611,26 @@ function Properties({ document, onDialog, onCategory }: {
               : t('document.versionOn', { date: i18n.date(version.createdAt) })}
           </span>
           <span className="help path">{version.filename}</span>
+          <span className="fingerprint">
+            <span className="help">{t('document.fingerprint')}</span>
+            <code title={version.sha256}>{version.sha256.slice(0, 16)}…</code>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={t('document.copyFingerprint')}
+              title={t('document.copyFingerprint')}
+              onClick={async () => notify(t((await copyText(version.sha256)) ? 'document.fingerprintCopied' : 'common.copyFailed'))}
+            >
+              <Icon name="copy" />
+            </button>
+          </span>
+          {version.fileAvailable && (
+            <a className="btn" href={fileUrl}><Icon name="download" />{t('document.downloadVersion')}</a>
+          )}
         </div>
       </section>
+
+      <Outline items={outline} current={reading} navigationRef={navigationRef} linkable={!isPdf(version.mediaType)} />
     </aside>
   );
 }

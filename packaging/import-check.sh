@@ -1,7 +1,8 @@
 #!/bin/sh
-# Imports a small PDF into a fresh installation of Lore and waits until its text is extracted.
-# It proves that the extraction process starts with the Java of the installation: the packages
-# bundle a reduced Java runtime, which must hold what Apache Tika needs.
+# Imports a small PDF and a Markdown file into a fresh installation of Lore, waits until their
+# text is extracted, then downloads the PDF and reads the rendering of the Markdown. It proves that
+# the extraction process starts with the Java of the installation (the packages bundle a reduced
+# Java runtime, which must hold what Apache Tika needs), and that the reader serves both.
 #   sh packaging/import-check.sh <log of Lore, which holds the setup code> [address of Lore]
 set -eu
 
@@ -62,15 +63,41 @@ document=$(curl -fsS -b "$jar" -c "$jar" -H "X-XSRF-TOKEN: $(token)" -F "file=@$
   "$base/api/v1/spaces/$space/documents" | first_id) || fail "import"
 [ -n "$document" ] || fail "no document"
 
-elapsed=0
-while :; do
-  status=$(curl -fsS -b "$jar" "$base/api/v1/documents/$document" | grep -o '"extractionStatus":"[A-Z]*"' | cut -d'"' -f4)
-  case $status in
-    INDEXED) break ;;
-    FAILED) fail "the extraction failed: $(curl -fsS -b "$jar" "$base/api/v1/documents/$document")" ;;
-  esac
-  [ "$elapsed" -lt 120 ] || fail "still $status after 120 s"
-  sleep 2
-  elapsed=$((elapsed + 2))
-done
+# Waits until the text of a document is extracted.
+indexed() {
+  elapsed=0
+  while :; do
+    status=$(curl -fsS -b "$jar" "$base/api/v1/documents/$1" | grep -o '"extractionStatus":"[A-Z]*"' | cut -d'"' -f4)
+    case $status in
+      INDEXED) break ;;
+      FAILED) fail "the extraction failed: $(curl -fsS -b "$jar" "$base/api/v1/documents/$1")" ;;
+    esac
+    [ "$elapsed" -lt 120 ] || fail "still $status after 120 s"
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+}
+
+indexed "$document"
 echo "import check: a PDF imported and indexed in about $elapsed s"
+
+# The original comes back as it was imported, never compressed, never shown as a page.
+curl -fsS -b "$jar" -H 'Accept-Encoding: gzip' -D "$work/headers" -o "$work/downloaded.pdf" \
+  "$base/api/v1/documents/$document/versions/1/file" || fail "download"
+cmp -s "$work/restore.pdf" "$work/downloaded.pdf" || fail "the file downloaded differs from the file imported"
+grep -qi '^x-content-type-options: nosniff' "$work/headers" || fail "no nosniff on the original"
+! grep -qi '^content-encoding:' "$work/headers" || fail "the original was compressed"
+echo "import check: the PDF downloaded is the file imported"
+
+# A Markdown file: its rendering, cleaned, with the anchors of its titles.
+printf '# Restore a database\n\nRun `pg_restore` from the last backup.\n\n## Frequent errors\n\n<script>alert(1)</script>\n' \
+  > "$work/restore.md"
+markdown=$(curl -fsS -b "$jar" -c "$jar" -H "X-XSRF-TOKEN: $(token)" -F "file=@$work/restore.md;type=text/markdown" \
+  "$base/api/v1/spaces/$space/documents" | first_id) || fail "import of the Markdown file"
+[ -n "$markdown" ] || fail "no Markdown document"
+indexed "$markdown"
+curl -fsS -b "$jar" -o "$work/rendering.json" "$base/api/v1/documents/$markdown/versions/1/rendering" || fail "rendering"
+grep -qF 'id=\"h-2\"' "$work/rendering.json" || fail "no anchor in the rendering: $(cat "$work/rendering.json")"
+grep -qF '<code>pg_restore</code>' "$work/rendering.json" || fail "no code in the rendering"
+! grep -qF '<script' "$work/rendering.json" || fail "a script went through the rendering"
+echo "import check: a Markdown file rendered for reading"

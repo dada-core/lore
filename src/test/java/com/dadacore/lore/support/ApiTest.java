@@ -37,7 +37,7 @@ public abstract class ApiTest {
     @BeforeEach
     void emptyDatabase() {
         jdbc.sql("""
-                truncate table audit_event, login_throttle, extraction_job, chunk, document_grant, document_version,
+                truncate table audit_event, login_throttle, extraction_job, rendering_part, rendering, chunk, document_grant, document_version,
                     document, import_settings, space_member, invitation_space, folder, space,
                     password_reset_token, invitation, membership, user_account, organization_settings, organization,
                     spring_session_attributes, spring_session

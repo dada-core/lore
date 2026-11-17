@@ -453,7 +453,8 @@ describe('import window, while files are being sent', () => {
     await browser.click(within(await screen.findByRole('dialog', { name: asking })).getByRole('button', { name: 'Fermer et interrompre' }));
     await waitFor(() => expect(router.state.location.search).toBe(''));
     expect(router.state.location.pathname).toBe('/spaces/infrastructure');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The window goes in the render that follows the change of address.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(uploads.sent.every((request) => request.aborted)).toBe(true);
   });
 

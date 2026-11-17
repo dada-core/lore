@@ -47,6 +47,12 @@ const PATHS = {
   text: <path d="M5 19 11 5h2l6 14M7.5 14h9" />,
   file: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>,
   'sidebar-right': <><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M14.5 4.5v15" /></>,
+  download: <path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" />,
+  print: <><path d="M7 9V4h10v5" /><rect x="4" y="9" width="16" height="8" rx="1.5" /><path d="M7 14h10v6H7z" /></>,
+  external: <><path d="M14 4h6v6M20 4l-9 9" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></>,
+  highlight: <><path d="m9 15 6.5-6.5 3 3L12 18H9z" /><path d="M4 20h16" /></>,
+  sort: <><path d="M7 4v16M4 7l3-3 3 3" /><path d="M17 20V4M14 17l3 3 3-3" /></>,
+  columns: <><rect x="4" y="5" width="16" height="14" rx="1.5" /><path d="M10 5v14M16 5v14" /></>,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

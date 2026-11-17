@@ -51,6 +51,8 @@ final class XhtmlText extends DefaultHandler {
     private int titles;
     private int collected;
     private boolean stopped;
+    /** Inside {@code <head>}: the properties of the file (its title), not its text. */
+    private int head;
 
     private XhtmlText(boolean byPage, int maxCharacters) {
         this.byPage = byPage;
@@ -83,6 +85,10 @@ final class XhtmlText extends DefaultHandler {
     @Override
     public void startElement(String uri, String localName, String qName, Attributes attributes) throws SAXException {
         String name = name(localName, qName);
+        if (head > 0 || name.equals("head")) {
+            head++;
+            return;
+        }
         if (byPage && name.equals("div") && "page".equals(attributes.getValue("class"))) {
             flush();
             current = new Place(places.size() + 1, List.of(), new ArrayList<>());
@@ -98,6 +104,10 @@ final class XhtmlText extends DefaultHandler {
 
     @Override
     public void endElement(String uri, String localName, String qName) throws SAXException {
+        if (head > 0) {
+            head--;
+            return;
+        }
         String name = name(localName, qName);
         if (!byPage && headingLevel > 0 && HEADINGS.contains(name)) {
             String title = heading(heading.toString());
@@ -122,6 +132,9 @@ final class XhtmlText extends DefaultHandler {
 
     @Override
     public void characters(char[] ch, int start, int length) throws SAXException {
+        if (head > 0) {
+            return;
+        }
         if (headingLevel > 0) {
             // Counted too, so that a huge title stops the reading like a huge paragraph.
             heading.append(ch, start, Math.min(length, Math.max(0, MAX_HEADING * 2 - heading.length())));

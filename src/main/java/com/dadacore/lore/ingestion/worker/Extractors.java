@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Locale;
 
 import com.dadacore.lore.ingestion.Extraction;
+import com.dadacore.lore.ingestion.Rendering;
+import com.dadacore.lore.shared.Texts;
 import org.apache.tika.detect.DefaultDetector;
 import org.apache.tika.detect.Detector;
 import org.apache.tika.exception.EncryptedDocumentException;
@@ -22,23 +24,14 @@ import org.apache.tika.parser.Parser;
 import org.apache.tika.parser.microsoft.ooxml.OOXMLParser;
 import org.apache.tika.parser.pdf.PDFParser;
 import org.apache.tika.parser.pdf.PDFParserConfig;
-import org.commonmark.node.AbstractVisitor;
-import org.commonmark.node.BlockQuote;
-import org.commonmark.node.Code;
-import org.commonmark.node.FencedCodeBlock;
-import org.commonmark.node.HardLineBreak;
-import org.commonmark.node.Heading;
-import org.commonmark.node.IndentedCodeBlock;
-import org.commonmark.node.ListItem;
+import org.apache.tika.sax.TeeContentHandler;
 import org.commonmark.node.Node;
-import org.commonmark.node.Paragraph;
-import org.commonmark.node.SoftLineBreak;
-import org.commonmark.node.Text;
 import org.xml.sax.ContentHandler;
 
 /**
  * The text of a file, by format: PDF and Word with Apache Tika, Markdown with commonmark, text as
- * it is. Runs in the extraction process only.
+ * it is; and, but for a PDF, its rendering for the reader, from the same reading. Runs in the
+ * extraction process only.
  */
 final class Extractors {
 
@@ -75,7 +68,7 @@ final class Extractors {
         config.setExtractActions(false);
         Metadata metadata = new Metadata();
         XhtmlText text = XhtmlText.byPage(maxCharacters);
-        parse(new PDFParser(), file, text, metadata, config);
+        parse(new PDFParser(), file, text, text, metadata, config);
 
         Chunker chunker = new Chunker(maxCharacters);
         int emptyPages = 0;
@@ -96,7 +89,7 @@ final class Extractors {
         Integer declared = metadata.getInt(PagedText.N_PAGES);
         int pageCount = declared != null && declared > 0 ? declared : pages.size();
         boolean scanned = pageCount > 0 && !text.stopped() && emptyPages * 2 >= pageCount;
-        return result(chunker, scanned, pageCount, null);
+        return result(chunker, scanned, pageCount, null, null);
     }
 
     private Extraction word(Path file) throws IOException, ExtractionFailure {
@@ -112,7 +105,9 @@ final class Extractors {
             throw new ExtractionFailure(ExtractionFailure.UNSUPPORTED_CONTENT, "Not a Word document: " + type);
         }
         XhtmlText text = XhtmlText.byHeading(maxCharacters);
-        parse(new OOXMLParser(), file, text, new Metadata(), null);
+        WordRendering rendering = new WordRendering();
+        // The rendering first: it sees the last characters before the text stops the reading.
+        parse(new OOXMLParser(), file, new TeeContentHandler(rendering, text), text, new Metadata(), null);
         Chunker chunker = new Chunker(maxCharacters);
         for (XhtmlText.Place place : text.places()) {
             chunker.section("h-" + place.number(), null, place.headings(), place.paragraphs());
@@ -120,12 +115,18 @@ final class Extractors {
         if (text.stopped()) {
             chunker.markTruncated();
         }
-        return result(chunker, false, null, null);
+        Rendering laidOut;
+        try {
+            laidOut = rendering.build(chunker.truncated());
+        } catch (RuntimeException e) {
+            laidOut = null;
+        }
+        return result(chunker, false, null, null, laidOut);
     }
 
     private Extraction markdown(Path file) throws IOException {
         TextFiles.Text read = TextFiles.read(file, maxCharacters);
-        Node document = org.commonmark.parser.Parser.builder().build().parse(read.content());
+        Node document = MarkdownRendering.PARSER.parse(read.content());
         MarkdownPlaces places = new MarkdownPlaces();
         document.accept(places);
         Chunker chunker = new Chunker(maxCharacters);
@@ -135,30 +136,78 @@ final class Extractors {
         if (read.truncated()) {
             chunker.markTruncated();
         }
-        return result(chunker, false, null, places.firstTitle);
+        Rendering rendering;
+        try {
+            rendering = MarkdownRendering.render(document, places, chunker.truncated());
+        } catch (RuntimeException e) {
+            // The text is kept, searchable; the document shows its file only.
+            rendering = null;
+        }
+        return result(chunker, false, null, places.firstTitle, rendering);
     }
 
     private Extraction text(Path file) throws IOException {
         TextFiles.Text read = TextFiles.read(file, maxCharacters);
-        List<String> paragraphs = List.of(read.content().replace("\r\n", "\n").split("\\n\\s*\\n"));
+        List<String> parts = parts(read.content().replace("\r\n", "\n").replace('\r', '\n'), Chunker.MAX_CHUNK);
         Chunker chunker = new Chunker(maxCharacters);
-        List<List<String>> groups = Chunker.pack(paragraphs);
-        for (int i = 0; i < groups.size(); i++) {
-            chunker.section("part-" + (i + 1), null, List.of(), groups.get(i));
+        RenderingBuilder rendering = new RenderingBuilder();
+        for (int i = 0; i < parts.size(); i++) {
+            String anchor = "part-" + (i + 1);
+            chunker.section(anchor, null, List.of(), List.of(parts.get(i)));
+            rendering.section(anchor, 0, null, null);
+            // Spaces, tabs and lines as they are written; the reader folds the long lines.
+            rendering.block("<pre>" + RenderingBuilder.escape(parts.get(i)) + "</pre>");
         }
         if (read.truncated()) {
             chunker.markTruncated();
         }
-        return result(chunker, false, null, null);
+        return result(chunker, false, null, null, rendering.build(chunker.truncated()));
     }
 
-    private static Extraction result(Chunker chunker, boolean scanned, Integer pageCount, String title) {
+    /**
+     * A text cut into parts of {@code max} characters at most, between two lines: the same part is
+     * a chunk ({@code part-3}) and a section of the rendering. A line longer than a part is cut at a
+     * space when it has one.
+     */
+    static List<String> parts(String text, int max) {
+        List<String> parts = new ArrayList<>();
+        StringBuilder part = new StringBuilder();
+        for (String line : text.split("(?<=\n)")) {
+            String rest = line;
+            while (rest.length() > max) {
+                if (!part.isEmpty()) {
+                    parts.add(part.toString());
+                    part.setLength(0);
+                }
+                int cut = rest.lastIndexOf(' ', max);
+                if (cut < max / 2) {
+                    cut = Texts.end(rest, max);
+                }
+                parts.add(rest.substring(0, cut));
+                rest = rest.substring(cut);
+            }
+            if (part.length() + rest.length() > max && !part.isEmpty()) {
+                parts.add(part.toString());
+                part.setLength(0);
+            }
+            part.append(rest);
+        }
+        if (!part.isEmpty()) {
+            parts.add(part.toString());
+        }
+        // A part made of blank lines only has nothing to show or to find.
+        parts.removeIf(String::isBlank);
+        return parts;
+    }
+
+    private static Extraction result(Chunker chunker, boolean scanned, Integer pageCount, String title,
+            Rendering rendering) {
         return new Extraction(scanned, Languages.detect(chunker.chunks()), pageCount, chunker.truncated(), title,
-                chunker.chunks());
+                chunker.chunks(), rendering);
     }
 
     /** Runs a Tika parser, embedded documents left out, and translates its failures. */
-    private static void parse(Parser parser, Path file, ContentHandler handler, Metadata metadata,
+    private static void parse(Parser parser, Path file, ContentHandler handler, XhtmlText text, Metadata metadata,
             PDFParserConfig pdf) throws IOException, ExtractionFailure {
         ParseContext context = new ParseContext();
         context.set(EmbeddedDocumentExtractor.class, new SkipEmbedded());
@@ -172,7 +221,7 @@ final class Extractors {
         } catch (XhtmlText.Enough enough) {
             // Enough text: the rest is cut.
         } catch (TikaException | org.xml.sax.SAXException | IOException | RuntimeException e) {
-            if (handler instanceof XhtmlText text && text.stopped()) {
+            if (text.stopped()) {
                 // The same maximum, wrapped by the parser on its way out: the rest is cut.
                 return;
             }
@@ -218,91 +267,6 @@ final class Extractors {
         public void parseEmbedded(TikaInputStream stream, ContentHandler handler, Metadata metadata,
                 ParseContext context, boolean outputHtml) {
             // Never called: shouldParseEmbedded says no.
-        }
-    }
-
-    /** The places of a Markdown document: the part before the first title, then one per title. */
-    private static final class MarkdownPlaces extends AbstractVisitor {
-
-        private final List<XhtmlText.Place> places = new ArrayList<>();
-        private final List<String> path = new ArrayList<>();
-        private XhtmlText.Place current = new XhtmlText.Place(0, List.of(), new ArrayList<>());
-        private String firstTitle;
-        private int titles;
-
-        MarkdownPlaces() {
-            places.add(current);
-        }
-
-        @Override
-        public void visit(Heading heading) {
-            String title = XhtmlText.heading(text(heading));
-            if (title.isEmpty()) {
-                return;
-            }
-            if (heading.getLevel() == 1 && firstTitle == null) {
-                firstTitle = title;
-            }
-            int level = Math.min(heading.getLevel(), path.size() + 1);
-            while (path.size() >= level) {
-                path.removeLast();
-            }
-            path.add(title);
-            titles++;
-            current = new XhtmlText.Place(titles, List.copyOf(path), new ArrayList<>());
-            places.add(current);
-        }
-
-        @Override
-        public void visit(Paragraph paragraph) {
-            current.paragraphs().add(text(paragraph));
-        }
-
-        @Override
-        public void visit(FencedCodeBlock code) {
-            current.paragraphs().add(code.getLiteral());
-        }
-
-        @Override
-        public void visit(IndentedCodeBlock code) {
-            current.paragraphs().add(code.getLiteral());
-        }
-
-        @Override
-        public void visit(ListItem item) {
-            // Each item is a paragraph of its own, read through its children.
-            visitChildren(item);
-        }
-
-        @Override
-        public void visit(BlockQuote quote) {
-            visitChildren(quote);
-        }
-
-        private static String text(Node node) {
-            StringBuilder text = new StringBuilder();
-            node.accept(new AbstractVisitor() {
-                @Override
-                public void visit(Text literal) {
-                    text.append(literal.getLiteral());
-                }
-
-                @Override
-                public void visit(Code code) {
-                    text.append(code.getLiteral());
-                }
-
-                @Override
-                public void visit(SoftLineBreak lineBreak) {
-                    text.append(' ');
-                }
-
-                @Override
-                public void visit(HardLineBreak lineBreak) {
-                    text.append('\n');
-                }
-            });
-            return text.toString();
         }
     }
 }

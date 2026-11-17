@@ -38,6 +38,7 @@ export const keys = {
   documentSummary: (spaceId: string) => ['documents', 'space', spaceId, 'summary'] as const,
   restrictedDocuments: (spaceId: string) => ['documents', 'space', spaceId, 'restricted'] as const,
   document: (id: string) => ['documents', 'one', id] as const,
+  recentDocuments: ['documents', 'recent'] as const,
   documentAccess: (id: string) => ['documents', 'one', id, 'access'] as const,
   importLimits: ['imports', 'limits'] as const,
   attention: ['imports', 'attention'] as const,

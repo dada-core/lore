@@ -320,7 +320,7 @@ class DocumentsApiTests extends ApiTest {
         UUID version = UUID.fromString(team.herve.get("/api/v1/documents/" + id).text("currentVersion.id"));
 
         results.extracted(version, new Extraction(false, "fr", null, false, "Rotation des certificats TLS internes",
-                List.of(new ExtractedChunk(0, "h-1", null, List.of("Rotation"), "Texte."))));
+                List.of(new ExtractedChunk(0, "h-1", null, List.of("Rotation"), "Texte.")), null));
 
         Response document = team.herve.get("/api/v1/documents/" + id);
         assertThat(document.text("title")).isEqualTo("Rotation des certificats TLS internes");

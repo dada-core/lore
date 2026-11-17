@@ -35,6 +35,7 @@
         <tika.version>4.2.0</tika.version>
         <!-- The version Tika is built with: tika-core brings commonmark extensions that must match. -->
         <commonmark.version>0.31.0</commonmark.version>
+        <owasp-html-sanitizer.version>20261110.1</owasp-html-sanitizer.version>
     </properties>
 
     <dependencyManagement>
@@ -122,6 +123,28 @@
             <groupId>org.commonmark</groupId>
             <artifactId>commonmark</artifactId>
             <version>${commonmark.version}</version>
+        </dependency>
+        <!-- The rendering of a Markdown file in the reader: tables, struck text, bare links. -->
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-gfm-tables</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-gfm-strikethrough</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark-ext-autolink</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
+        <!-- The rendering is cleaned again by the application: the extraction process reads hostile files. -->
+        <dependency>
+            <groupId>com.googlecode.owasp-java-html-sanitizer</groupId>
+            <artifactId>owasp-java-html-sanitizer</artifactId>
+            <version>${owasp-html-sanitizer.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

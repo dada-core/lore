@@ -12,6 +12,10 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
+import com.dadacore.lore.ingestion.ExtractedChunk;
+import com.dadacore.lore.ingestion.Extraction;
+import com.dadacore.lore.ingestion.ExtractionResults;
+import com.dadacore.lore.ingestion.Rendering;
 import com.dadacore.lore.support.ApiTest;
 import com.dadacore.lore.support.Browser;
 import com.dadacore.lore.support.Response;
@@ -19,6 +23,7 @@ import com.dadacore.lore.support.SampleFiles;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Who sees which document: every route of the documents, for every kind of person, on open and
@@ -43,6 +48,9 @@ class WhoSeesWhichDocumentTests extends ApiTest {
 
     private record Probe(String route, Function<Person, Response> call, int[] expected) {
     }
+
+    @Autowired
+    ExtractionResults results;
 
     private final Map<Person, Browser> browsers = new EnumMap<>(Person.class);
     private String space;
@@ -80,7 +88,35 @@ class WhoSeesWhichDocumentTests extends ApiTest {
                         p -> as(p).delete(fresh(Person.MAINTAINER)), 204, 204, 204, 403, 403, 404, 401),
                 probe("POST A/extraction/retry", p -> as(p).post(a + "/extraction/retry"), 409, 409, 409, 409, 403, 404, 401),
                 probe("GET a document of another organization, access", p -> as(p).get(other + "/access"),
-                        404, 404, 404, 404, 404, 404, 401));
+                        404, 404, 404, 404, 404, 404, 401),
+                // The reader: the rendering and the file follow the same rule as the page.
+                probe("GET A rendering", p -> as(p).get(a + "/versions/1/rendering"), 200, 200, 200, 200, 200, 404, 401),
+                probe("GET B file", p -> file(p, b + "/versions/1/file"), 200, 200, 200, 200, 200, 404, 401),
+                probe("HEAD B file", p -> file(p, "HEAD", b + "/versions/1/file"), 200, 200, 200, 200, 200, 404, 401),
+                probe("GET R1 rendering", p -> as(p).get(r1 + "/versions/1/rendering"), 200, 200, 200, 404, 200, 404, 401),
+                probe("GET R1 file", p -> file(p, r1 + "/versions/1/file"), 200, 200, 200, 404, 200, 404, 401),
+                probe("GET R2 rendering", p -> as(p).get(r2 + "/versions/1/rendering"), 200, 200, 200, 404, 404, 404, 401),
+                probe("GET R2 file", p -> file(p, r2 + "/versions/1/file"), 200, 200, 200, 404, 404, 404, 401),
+                probe("GET R3 rendering", p -> as(p).get(r3 + "/versions/1/rendering"), 200, 200, 200, 200, 404, 404, 401),
+                probe("GET R3 file", p -> file(p, r3 + "/versions/1/file"), 200, 200, 200, 200, 404, 404, 401),
+                probe("GET A file, inline for a text", p -> as(p).get(a + "/versions/1/file?disposition=inline"),
+                        400, 400, 400, 400, 400, 404, 401),
+                probe("GET A, a version it does not have", p -> as(p).get(a + "/versions/9/file"), 404, 404, 404, 404, 404, 404, 401),
+                // The document of another organization has no file on the disk: the 404 comes first.
+                probe("GET a document of another organization, rendering", p -> as(p).get(other + "/versions/1/rendering"),
+                        404, 404, 404, 404, 404, 404, 401),
+                probe("GET a document of another organization, file", p -> file(p, other + "/versions/1/file"),
+                        404, 404, 404, 404, 404, 404, 401),
+                probe("PUT owner of a document imported by the contributor",
+                        p -> as(p).put(fresh(Person.CONTRIBUTOR) + "/owner", body("userId", userId(ELI))),
+                        200, 200, 200, 200, 403, 404, 401),
+                probe("PUT owner of a document imported by the maintainer",
+                        p -> as(p).put(fresh(Person.MAINTAINER) + "/owner", body("userId", userId(HERVE))),
+                        200, 200, 200, 403, 403, 404, 401),
+                probe("PUT owner of a document restricted to nobody",
+                        p -> as(p).put(document(Person.MAINTAINER, "R-" + next() + ".txt", "restricted", "true") + "/owner",
+                                body("userId", userId(ELI))),
+                        200, 200, 200, 404, 404, 404, 401));
 
         return probes.stream().flatMap(probe -> Arrays.stream(Person.values()).map(person -> {
             int expected = probe.expected()[person.ordinal()];
@@ -114,7 +150,9 @@ class WhoSeesWhichDocumentTests extends ApiTest {
         });
         assertThat(as(Person.OUTSIDER).get(space + "/documents").status()).isEqualTo(404);
 
-        // The documents imported by the contributor are still extracting: they see them on their home page.
+        // The documents imported by the contributor that are still extracting: on their home page only.
+        document(Person.CONTRIBUTOR, "C1.txt");
+        document(Person.CONTRIBUTOR, "C2.txt", "restricted", "true");
         assertThat(as(Person.CONTRIBUTOR).get("/api/v1/imports/attention").json().size()).isEqualTo(2);
         assertThat(as(Person.READER).get("/api/v1/imports/attention").json().size()).isZero();
     }
@@ -143,6 +181,13 @@ class WhoSeesWhichDocumentTests extends ApiTest {
         assertThat(as(Person.MAINTAINER).get(a).status()).isEqualTo(200);
         assertThat(as(Person.MAINTAINER).patch(a, body("title", "Changé")).code()).isEqualTo("space_archived");
         assertThat(as(Person.OWNER).delete(a).code()).isEqualTo("space_archived");
+        // Reading is no change: those who still see the documents read and download them.
+        assertThat(as(Person.MAINTAINER).get(a + "/versions/1/rendering").status()).isEqualTo(200);
+        assertThat(file(Person.MAINTAINER, a + "/versions/1/file").status()).isEqualTo(200);
+        assertThat(file(Person.OWNER, a + "/versions/1/file").status()).isEqualTo(200);
+        assertThat(file(Person.CONTRIBUTOR, a + "/versions/1/file").status()).isEqualTo(404);
+        assertThat(as(Person.READER).get(a + "/versions/1/rendering").status()).isEqualTo(404);
+        assertThat(as(Person.MAINTAINER).put(a + "/owner", body("userId", userId(ELI))).code()).isEqualTo("space_archived");
     }
 
     @Test
@@ -190,6 +235,15 @@ class WhoSeesWhichDocumentTests extends ApiTest {
         r1 = document(Person.MAINTAINER, "R1.txt", "restricted", "true", "userIds", userId(ELFRIED).toString());
         r2 = document(Person.MAINTAINER, "R2.txt", "restricted", "true");
         r3 = document(Person.CONTRIBUTOR, "R3.txt", "restricted", "true");
+        // Their extraction, as it would end: each has its rendering.
+        for (String document : List.of(a, b, r1, r2, r3)) {
+            UUID version = jdbc.sql("select current_version_id from document where id = ?::uuid").param(id(document))
+                    .query(UUID.class).single();
+            results.extracted(version, new Extraction(false, "fr", null, false, null,
+                    List.of(new ExtractedChunk(0, "part-1", null, List.of(), "Contenu")),
+                    new Rendering(List.of("<section id=\"part-1\"><pre>Contenu</pre></section>"),
+                            List.of(new Rendering.Place("part-1", 1, 0, null)), false)));
+        }
 
         // A document of another organization, where everyone here is also a maintainer.
         UUID organization = jdbc.sql("insert into organization (name, slug) values ('Autre', 'autre') returning id")
@@ -233,6 +287,16 @@ class WhoSeesWhichDocumentTests extends ApiTest {
         List<String> titles = new ArrayList<>();
         list.json().path("items").forEach(item -> titles.add(item.get("title").asString()));
         return titles;
+    }
+
+    /** A file is read as bytes: only its status matters here. */
+    private Response file(Person person, String path) {
+        return file(person, "GET", path);
+    }
+
+    private Response file(Person person, String method, String path) {
+        Browser.Raw raw = as(person).raw(method, path);
+        return new Response(raw.status(), null, raw.headers());
     }
 
     private Browser as(Person person) {

@@ -181,6 +181,9 @@
       },
       "DocumentActions" : {
         "properties" : {
+          "changeOwner" : {
+            "type" : "boolean"
+          },
           "delete" : {
             "type" : "boolean"
           },
@@ -194,7 +197,7 @@
             "type" : "boolean"
           }
         },
-        "required" : [ "delete", "edit", "manageAccess", "retry" ],
+        "required" : [ "changeOwner", "delete", "edit", "manageAccess", "retry" ],
         "type" : "object"
       },
       "DocumentChanges" : {
@@ -775,6 +778,35 @@
         "required" : [ "defaultLocale", "name", "timeZone" ],
         "type" : "object"
       },
+      "OutlineEntry" : {
+        "properties" : {
+          "anchor" : {
+            "type" : "string"
+          },
+          "level" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "part" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "title" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "anchor", "level", "part", "title" ],
+        "type" : "object"
+      },
+      "OwnerChange" : {
+        "properties" : {
+          "userId" : {
+            "format" : "uuid",
+            "type" : [ "string", "null" ]
+          }
+        },
+        "type" : "object"
+      },
       "PageResponseDocumentItem" : {
         "properties" : {
           "items" : {
@@ -860,6 +892,70 @@
             "type" : [ "string", "null" ]
           }
         },
+        "type" : "object"
+      },
+      "RecentDocument" : {
+        "properties" : {
+          "folder" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/FolderLink"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "space" : {
+            "$ref" : "#/components/schemas/SpaceLink"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "viewedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "required" : [ "id", "space", "status", "title", "viewedAt" ],
+        "type" : "object"
+      },
+      "RenderingView" : {
+        "properties" : {
+          "html" : {
+            "type" : "string"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "outline" : {
+            "items" : {
+              "$ref" : "#/components/schemas/OutlineEntry"
+            },
+            "type" : [ "array", "null" ]
+          },
+          "part" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "partCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "renderer" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "truncated" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "html", "number", "part", "partCount", "renderer", "truncated" ],
         "type" : "object"
       },
       "ResetDetails" : {
@@ -1274,6 +1370,9 @@
           "extractionStatus" : {
             "type" : "string"
           },
+          "fileAvailable" : {
+            "type" : "boolean"
+          },
           "filename" : {
             "type" : "string"
           },
@@ -1299,6 +1398,9 @@
             "format" : "int32",
             "type" : [ "integer", "null" ]
           },
+          "sha256" : {
+            "type" : "string"
+          },
           "sizeBytes" : {
             "format" : "int64",
             "type" : "integer"
@@ -1307,7 +1409,7 @@
             "type" : "boolean"
           }
         },
-        "required" : [ "createdAt", "extractionStatus", "filename", "id", "mediaType", "number", "sizeBytes", "textTruncated" ],
+        "required" : [ "createdAt", "extractionStatus", "fileAvailable", "filename", "id", "mediaType", "number", "sha256", "sizeBytes", "textTruncated" ],
         "type" : "object"
       }
     }
@@ -1883,6 +1985,37 @@
         "tags" : [ "Session" ]
       }
     },
+    "/api/v1/documents/recent" : {
+      "get" : {
+        "operationId" : "recent",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/RecentDocument"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "The documents the person opened last and still sees, most recent first (size: 3 by default, 10 at most)",
+        "tags" : [ "Documents" ]
+      }
+    },
     "/api/v1/documents/{id}" : {
       "delete" : {
         "operationId" : "delete_2",
@@ -1926,7 +2059,7 @@
             "description" : "OK"
           }
         },
-        "summary" : "A document, its current version and what the person may do with it",
+        "summary" : "A document, its current version and what the person may do with it; its opening is recorded in the audit log once an hour",
         "tags" : [ "Documents" ]
       },
       "patch" : {
@@ -2093,6 +2226,139 @@
           }
         },
         "summary" : "Move a document to another folder of its space, or to its root with folderId null",
+        "tags" : [ "Documents" ]
+      }
+    },
+    "/api/v1/documents/{id}/owner" : {
+      "put" : {
+        "operationId" : "changeOwner",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OwnerChange"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DocumentView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Hand the document over to another member of the space, at least a contributor: its maintainers, or its owner",
+        "tags" : [ "Documents" ]
+      }
+    },
+    "/api/v1/documents/{id}/versions/{number}/file" : {
+      "get" : {
+        "operationId" : "file",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "number",
+          "required" : true,
+          "schema" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "disposition",
+          "required" : false,
+          "schema" : {
+            "type" : [ "string", "null" ]
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        },
+        "summary" : "The original file of a version, under its name: attachment (default), or inline for a PDF; ranges (206, 416), If-Range, If-None-Match (304), 410 file_missing. A download is recorded in the audit log",
+        "tags" : [ "Documents" ]
+      }
+    },
+    "/api/v1/documents/{id}/versions/{number}/rendering" : {
+      "get" : {
+        "operationId" : "rendering",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "number",
+          "required" : true,
+          "schema" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "part",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : [ "integer", "null" ]
+          }
+        }, {
+          "in" : "query",
+          "name" : "anchor",
+          "required" : false,
+          "schema" : {
+            "type" : [ "string", "null" ]
+          }
+        }, {
+          "in" : "query",
+          "name" : "outline",
+          "required" : false,
+          "schema" : {
+            "default" : true,
+            "type" : "boolean"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RenderingView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A version laid out for reading (Markdown, Word, text), cleaned: the part asked (part), or the part that holds an anchor (anchor), or the first; the outline of the whole document unless outline=false. 409 extraction_pending, 409 no_rendering (a PDF, a failure)",
         "tags" : [ "Documents" ]
       }
     },
@@ -2602,6 +2868,20 @@
           }
         }, {
           "in" : "query",
+          "name" : "sort",
+          "required" : false,
+          "schema" : {
+            "type" : [ "string", "null" ]
+          }
+        }, {
+          "in" : "query",
+          "name" : "direction",
+          "required" : false,
+          "schema" : {
+            "type" : [ "string", "null" ]
+          }
+        }, {
+          "in" : "query",
           "name" : "page",
           "required" : false,
           "schema" : {
@@ -2629,7 +2909,7 @@
             "description" : "OK"
           }
         },
-        "summary" : "A page of the documents of a space the person can see, by folder then most recent first; folder=none lists those without a folder, ids (100 at most) follows given documents",
+        "summary" : "A page of the documents of a space the person can see, by folder then in the order asked: sort is updated (default, most recent first), title, category, status or size, direction asc or desc; folder=none lists those without a folder, ids (100 at most) follows given documents",
         "tags" : [ "Documents" ]
       },
       "post" : {

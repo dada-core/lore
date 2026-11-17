@@ -52,6 +52,53 @@ class ExtractionApiTests extends ApiTest {
     }
 
     @Test
+    void aMarkdownFileIsLaidOutForReading() {
+        Imported imported = importFile("runbook.md", """
+                # Restaurer une base
+
+                Lancez `pg_restore` depuis la sauvegarde.
+
+                ## Erreurs fréquentes
+
+                <script>alert(1)</script>
+
+                Rôle absent : voir [la section](#erreurs-frequentes).
+                """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(waitForExtraction(imported).text("currentVersion.extractionStatus")).isEqualTo("INDEXED");
+
+        Response rendering = imported.browser.get("/api/v1/documents/" + imported.id + "/versions/1/rendering");
+        assertThat(rendering.status()).as(rendering.toString()).isEqualTo(200);
+        assertThat(rendering.text("html")).contains("<section id=\"h-1\"><h2>Restaurer une base</h2>")
+                .contains("<code>pg_restore</code>").contains("<a href=\"#h-2\"").contains(">la section</a>").doesNotContain("<script");
+        assertThat(rendering.text("outline.1.title")).isEqualTo("Erreurs fréquentes");
+        assertThat(rendering.number("renderer")).isEqualTo(1);
+    }
+
+    @Test
+    void aPdfIsShownAsItIsWithoutRendering() {
+        Imported pdf = importFile("guide.pdf", SampleFiles.pdf(ENGLISH));
+        waitForExtraction(pdf);
+        assertThat(pdf.browser.get("/api/v1/documents/" + pdf.id + "/versions/1/rendering").code()).isEqualTo("no_rendering");
+        assertThat(jdbc.sql("select count(*) from rendering").query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void aRenderingReturnedByAProcessTakenOverByAFileIsCleanedBeforeItIsKept() {
+        workers.simulateNext("hostile");
+
+        Imported imported = importFile("notes.md", "# Notes\n\nTexte.".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(waitForExtraction(imported).text("currentVersion.extractionStatus")).isEqualTo("INDEXED");
+
+        String html = imported.browser.get("/api/v1/documents/" + imported.id + "/versions/1/rendering").text("html");
+        assertThat(html).contains("Avant").contains("Après").contains("lien")
+                .doesNotContain("<script").doesNotContain("pwned").doesNotContain("onerror").doesNotContain("javascript:")
+                .doesNotContain("root").doesNotContain("style").doesNotContain("<img");
+        assertThat(jdbc.sql("select html from rendering_part").query(String.class).single()).isEqualTo(html);
+        assertThat(jdbc.sql("select places::text from rendering").query(String.class).single()).doesNotContain("root");
+    }
+
+    @Test
     void aScanIsImportedAndMarkedAsSuch() {
         Response document = waitForExtraction(importFile("schema.pdf", SampleFiles.pdf(null, null)));
 
