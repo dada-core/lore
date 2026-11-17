@@ -51,9 +51,10 @@ export function view(overrides: Record<string, unknown> = {}, version: Record<st
       sizeBytes: 1_258_291, language: null, pageCount: null, sectionCount: null, extractionStatus: 'PENDING',
       extractionError: null, textTruncated: false, extractedAt: null, createdAt: '2026-11-16T09:00:00Z',
       author: { id: eli.id, displayName: eli.displayName },
+      sha256: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08', fileAvailable: true,
       ...version,
     },
-    actions: { edit: true, delete: true, manageAccess: true, retry: false },
+    actions: { edit: true, delete: true, manageAccess: true, retry: false, changeOwner: true },
     duplicateOf: null,
     ...overrides,
   };

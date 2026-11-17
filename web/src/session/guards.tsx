@@ -12,7 +12,8 @@ export function RequireUser({ children }: { children: ReactNode }) {
   const location = useLocation();
   if (user) return children;
   const reason = lastSignOutReason();
-  const requested = location.pathname + location.search;
+  // The fragment too: a link to a section of a document opens that section once signed in.
+  const requested = location.pathname + location.search + location.hash;
   const next = reason === 'signedOut' || requested === '/' ? '' : `?next=${encodeURIComponent(requested)}`;
   return <Navigate to={`/login${next}`} replace state={{ notice: reason }} />;
 }

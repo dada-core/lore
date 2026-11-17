@@ -55,28 +55,6 @@ final class Chunker {
         }
     }
 
-    /** Paragraphs grouped by size, for a text without places of its own. */
-    static List<List<String>> pack(List<String> paragraphs) {
-        List<List<String>> groups = new ArrayList<>();
-        List<String> group = new ArrayList<>();
-        int size = 0;
-        for (String paragraph : paragraphs) {
-            for (String piece : pieces(clean(paragraph))) {
-                if (!group.isEmpty() && size + 2 + piece.length() > MAX_CHUNK) {
-                    groups.add(group);
-                    group = new ArrayList<>();
-                    size = 0;
-                }
-                size += (group.isEmpty() ? 0 : 2) + piece.length();
-                group.add(piece);
-            }
-        }
-        if (!group.isEmpty()) {
-            groups.add(group);
-        }
-        return groups;
-    }
-
     /** True once the maximum is reached: the rest of the document is left out. */
     boolean full() {
         return truncated;

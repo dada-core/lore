@@ -12,10 +12,12 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import ch.qos.logback.classic.Level;
 import com.dadacore.lore.ingestion.Extraction;
+import com.dadacore.lore.ingestion.Rendering;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,12 +39,19 @@ public final class WorkerMain {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
+    /** For the tests: what an extraction process taken over by a file could return. */
+    private static final Rendering HOSTILE = new Rendering(List.of("<section id=\"h-0\"><p>Avant</p>"
+            + "<script>document.title='pwned'</script><img src=x onerror=\"alert(1)\">"
+            + "<a href=\"javascript:alert(2)\">lien</a><p id=\"root\" style=\"color:red\">Après</p></section>"),
+            List.of(new Rendering.Place("h-0", 1, 0, null), new Rendering.Place("root", 1, 1, "Piège")), false);
+
     /**
      * @param path          the file to read
      * @param mediaType     its type, as decided by Lore at import
      * @param output        where to write the result
      * @param maxCharacters the maximum of text kept
-     * @param simulate      {@code hang}, {@code crash} or {@code oom}, honoured only with the test hooks
+     * @param simulate      {@code hang}, {@code crash}, {@code oom} or {@code hostile} (a rendering that a
+     *                      process taken over by a file would return), honoured only with the test hooks
      */
     public record Request(String path, String mediaType, String output, int maxCharacters, @Nullable String simulate) {
     }
@@ -77,9 +86,16 @@ public final class WorkerMain {
         try {
             Extraction extraction = new Extractors(request.maxCharacters())
                     .extract(Path.of(request.path()), request.mediaType());
+            if (testHooks && "hostile".equals(request.simulate())) {
+                extraction = extraction.withRendering(HOSTILE);
+            }
             Path output = Path.of(request.output());
             Path partial = output.resolveSibling(output.getFileName() + ".part");
             JSON.writeValue(partial.toFile(), extraction);
+            if (Files.size(partial) > Extraction.MAX_RESULT_BYTES && extraction.rendering() != null) {
+                // A rendering heavy with markup: the text stays searchable, the page offers the file.
+                JSON.writeValue(partial.toFile(), extraction.withRendering(null));
+            }
             Files.move(partial, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             reply.put("ok", true);
         } catch (ExtractionFailure failure) {

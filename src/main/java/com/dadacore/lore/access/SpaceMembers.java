@@ -108,6 +108,11 @@ public class SpaceMembers {
         return counts;
     }
 
+    /** The role of a person in the space, empty when they are not a member of it. */
+    public Optional<SpaceRole> roleOf(SpaceRef space, UUID userId) {
+        return row(space.id(), userId).map(Row::role);
+    }
+
     /** Field errors {@code userId:unknown_member}; {@code 409 already_space_member}. */
     @Transactional
     public SpaceMemberView add(Viewer viewer, SpaceRef space, @Nullable UUID userId, @Nullable String requestedRole) {

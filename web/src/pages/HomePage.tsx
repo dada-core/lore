@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { api, call, type Schemas } from '../api/client';
 import { keys } from '../api/queryClient';
-import { failureCause, useOpenImport, whileExtracting } from '../documents/documents';
+import { failureCause, StatusLabel, useOpenImport, whileExtracting } from '../documents/documents';
 import { useI18n } from '../i18n/i18n';
 import { View } from '../layouts/AppShell';
 import { useUser } from '../session/session';
@@ -56,6 +56,7 @@ export function HomePage() {
               <h1 className="page-title">{t('home.hello', { name: firstName })}</h1>
               <p className="page-intro">{today.charAt(0).toUpperCase() + today.slice(1)}</p>
             </div>
+            <Resume />
             <section aria-labelledby="home-spaces">
               <div className="row-between">
                 <h2 className="section-title" id="home-spaces">{t('home.spaces')}</h2>
@@ -111,6 +112,42 @@ export function HomePage() {
         </div>
       </div>
     </View>
+  );
+}
+
+/**
+ * "Resume": the last documents the person opened and still sees, from their views in the audit
+ * log. Nothing before their first reading.
+ */
+function Resume() {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const recent = useQuery({
+    queryKey: keys.recentDocuments,
+    queryFn: () => call(() => api.GET('/api/v1/documents/recent')),
+  });
+  if (!recent.data || recent.data.length === 0) return null;
+  return (
+    <section aria-labelledby="home-resume">
+      <h2 className="section-title" id="home-resume">{t('home.resume')}</h2>
+      <ul className="list">
+        {recent.data.map((item) => (
+          <li key={item.id}>
+            <Link className="list-row" to={`/documents/${item.id}`}>
+              <span className="cat-ico"><Icon name="file-text" /></span>
+              <span className="list-main">
+                <span className="list-title">{item.title}</span>
+                <span className="list-sub">
+                  {[item.space.name, item.folder?.name, t('home.resume.viewed', { when: i18n.relative(item.viewedAt) })]
+                    .filter(Boolean).join(' · ')}
+                </span>
+              </span>
+              <StatusLabel status={item.status} />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

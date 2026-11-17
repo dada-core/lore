@@ -21,7 +21,7 @@ interface Shell {
 }
 const ShellContext = createContext<Shell>({ showNavigation: () => {} });
 
-function isTyping(): boolean {
+export function isTyping(): boolean {
   const element = document.activeElement;
   return !!element && (/^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName) || (element as HTMLElement).isContentEditable);
 }

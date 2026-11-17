@@ -16,14 +16,17 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.dadacore.lore.ingestion.ExtractedChunk;
+import com.dadacore.lore.ingestion.Rendering;
 import com.dadacore.lore.shared.SqlCondition;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 
-/** The tables {@code document}, {@code document_version} and {@code chunk}. */
+/** The tables {@code document}, {@code document_version}, {@code chunk} and {@code rendering}. */
 @Repository
 class DocumentRepository {
 
@@ -65,6 +68,10 @@ class DocumentRepository {
             join document_version v on v.id = d.current_version_id
             """;
 
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final TypeReference<List<Rendering.Place>> PLACES = new TypeReference<>() {
+    };
+
     private final JdbcClient jdbc;
     private final JdbcTemplate template;
 
@@ -83,14 +90,17 @@ class DocumentRepository {
 
     /**
      * A page of the documents of a space that the condition allows, by folder (those without one
-     * first), then most recently updated first.
+     * first), then in the order asked.
      */
-    List<Row> list(UUID spaceId, SqlCondition readable, Filter filter, long offset, int limit) {
+    List<Row> list(UUID spaceId, SqlCondition readable, Filter filter, Sort sort, boolean descending, long offset,
+            int limit) {
         List<Object> params = new ArrayList<>();
         String where = where(spaceId, readable, filter, params);
         params.add(limit);
         params.add(offset);
-        return jdbc.sql(COLUMNS + where + " order by d.folder_id nulls first, d.updated_at desc, d.id limit ? offset ?")
+        String order = " order by d.folder_id nulls first, " + sort.column + (descending ? " desc" : " asc")
+                + " nulls last, d.id limit ? offset ?";
+        return jdbc.sql(COLUMNS + where + order)
                 .params(params)
                 .query(DocumentRepository::row)
                 .list();
@@ -104,6 +114,18 @@ class DocumentRepository {
                 .params(params)
                 .query(Long.class)
                 .single();
+    }
+
+    /** The order of a list, within each folder. */
+    enum Sort {
+        UPDATED("d.updated_at"), TITLE("lower(d.title)"), CATEGORY("d.category"), STATUS("d.status"),
+        SIZE("v.size_bytes");
+
+        private final String column;
+
+        Sort(String column) {
+            this.column = column;
+        }
     }
 
     /** Which documents a list shows. */
@@ -174,6 +196,22 @@ class DocumentRepository {
         return counts;
     }
 
+    /** Those of these documents of the organization that the condition allows, in no order. */
+    List<Row> findAll(UUID organizationId, Collection<UUID> ids, SqlCondition readable) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        List<Object> params = new ArrayList<>();
+        params.add(organizationId);
+        params.addAll(ids);
+        params.addAll(readable.params());
+        return jdbc.sql(COLUMNS + " where s.organization_id = ? and d.id in ("
+                        + String.join(", ", Collections.nCopies(ids.size(), "?")) + ") and (" + readable.sql() + ")")
+                .params(params)
+                .query(DocumentRepository::row)
+                .list();
+    }
+
     /** The documents of the organization imported by the person, still extracting or failed. */
     List<Row> attention(UUID organizationId, UUID userId, SqlCondition readable, int limit) {
         List<Object> params = new ArrayList<>();
@@ -238,6 +276,10 @@ class DocumentRepository {
 
     void move(UUID id, @Nullable UUID folderId) {
         jdbc.sql("update document set folder_id = ?, updated_at = now() where id = ?").params(folderId, id).update();
+    }
+
+    void changeOwner(UUID id, UUID ownerId) {
+        jdbc.sql("update document set owner_id = ?, updated_at = now() where id = ?").params(ownerId, id).update();
     }
 
     void restrict(UUID id, boolean restricted) {
@@ -351,6 +393,19 @@ class DocumentRepository {
                 .optional();
     }
 
+    /** A version of a document by its number. */
+    Optional<Version> version(UUID documentId, int number) {
+        return jdbc.sql("""
+                select v.id as version_id, v.number, v.sha256, v.filename, v.media_type, v.size_bytes, v.author_id,
+                    v.created_at as version_created_at, v.extraction_status, v.extraction_error, v.extracted_at,
+                    v.language, v.page_count, v.section_count, v.text_truncated
+                from document_version v where v.document_id = ? and v.number = ?
+                """)
+                .params(documentId, number)
+                .query((rs, row) -> version(rs))
+                .optional();
+    }
+
     void extracted(UUID versionId, String status, String language, @Nullable Integer pageCount, int sectionCount,
             boolean truncated) {
         jdbc.sql("""
@@ -403,6 +458,55 @@ class DocumentRepository {
                 return chunks.size();
             }
         });
+    }
+
+    /** The rendering of a version, without its parts. */
+    record RenderingRow(int renderer, int partCount, boolean truncated, List<Rendering.Place> places, Instant createdAt) {
+    }
+
+    /** Replaces the rendering of a version; none for a PDF, a failure or an older rendering left out. */
+    void replaceRendering(UUID versionId, @Nullable Rendering rendering) {
+        jdbc.sql("delete from rendering where version_id = ?").param(versionId).update();
+        if (rendering == null || rendering.parts().isEmpty()) {
+            return;
+        }
+        jdbc.sql("""
+                insert into rendering (version_id, renderer, part_count, truncated, places)
+                values (?, ?, ?, ?, cast(? as jsonb))
+                """)
+                .params(versionId, Rendering.RULES, rendering.parts().size(), rendering.truncated(),
+                        JSON.writeValueAsString(rendering.places()))
+                .update();
+        List<String> parts = rendering.parts();
+        template.batchUpdate("insert into rendering_part (version_id, number, html) values (?, ?, ?)",
+                new BatchPreparedStatementSetter() {
+                    @Override
+                    public void setValues(PreparedStatement statement, int i) throws SQLException {
+                        statement.setObject(1, versionId);
+                        statement.setInt(2, i + 1);
+                        statement.setString(3, parts.get(i));
+                    }
+
+                    @Override
+                    public int getBatchSize() {
+                        return parts.size();
+                    }
+                });
+    }
+
+    Optional<RenderingRow> rendering(UUID versionId) {
+        return jdbc.sql("select renderer, part_count, truncated, places::text as places, created_at from rendering where version_id = ?")
+                .param(versionId)
+                .query((rs, row) -> new RenderingRow(rs.getInt("renderer"), rs.getInt("part_count"), rs.getBoolean("truncated"),
+                        JSON.readValue(rs.getString("places"), PLACES), instant(rs.getTimestamp("created_at"))))
+                .optional();
+    }
+
+    Optional<String> renderingPart(UUID versionId, int number) {
+        return jdbc.sql("select html from rendering_part where version_id = ? and number = ?")
+                .params(versionId, number)
+                .query(String.class)
+                .optional();
     }
 
     /** The title a Markdown document takes from its first title, unless someone changed it already. */

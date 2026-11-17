@@ -11,6 +11,7 @@ import java.util.UUID;
 import com.dadacore.lore.identity.OrganizationMember;
 import com.dadacore.lore.identity.OrganizationMembers;
 import com.dadacore.lore.library.spaces.Space;
+import com.dadacore.lore.storage.FileStore;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -38,15 +39,21 @@ class DocumentViews {
      * @param extractionError  for a failure: {@code encrypted}, {@code corrupt}, {@code unsupported_content},
      *                         {@code timeout}, {@code extractor_crashed} or {@code file_missing}
      * @param textTruncated    the text went beyond what is kept, and was cut
+     * @param sha256           the fingerprint of the file, to compare it with a copy
+     * @param fileAvailable    false when the file is missing on the disk of the server
      */
     record VersionView(UUID id, int number, String filename, String mediaType, long sizeBytes,
             @Nullable String language, @Nullable Integer pageCount, @Nullable Integer sectionCount,
             String extractionStatus, @Nullable String extractionError, boolean textTruncated,
-            @Nullable Instant extractedAt, Instant createdAt, @Nullable PersonLink author) {
+            @Nullable Instant extractedAt, Instant createdAt, @Nullable PersonLink author, String sha256,
+            boolean fileAvailable) {
     }
 
     /** What the person may do with the document, so that the interface only offers that. */
-    record DocumentActions(boolean edit, boolean delete, boolean manageAccess, boolean retry) {
+    record DocumentActions(boolean edit, boolean delete, boolean manageAccess, boolean retry, boolean changeOwner) {
+
+        /** Nothing: for a document the person no longer sees once they handed it over. */
+        static final DocumentActions NONE = new DocumentActions(false, false, false, false, false);
     }
 
     record SpaceLink(UUID id, String name, String slug, String color) {
@@ -63,28 +70,35 @@ class DocumentViews {
 
     private final JdbcClient jdbc;
     private final OrganizationMembers people;
+    private final FileStore store;
 
-    DocumentViews(JdbcClient jdbc, OrganizationMembers people) {
+    DocumentViews(JdbcClient jdbc, OrganizationMembers people, FileStore store) {
         this.jdbc = jdbc;
         this.people = people;
+        this.store = store;
     }
 
     DocumentView view(Space space, DocumentRepository.Row row, DocumentActions actions, @Nullable DocumentLink duplicateOf) {
         Map<UUID, OrganizationMember> names = names(space.organizationId(), List.of(row));
         DocumentRepository.Version version = row.version();
-        FolderLink folder = row.folderId() == null ? null : jdbc.sql("select id, name from folder where id = ?")
-                .param(row.folderId())
-                .query((rs, n) -> new FolderLink(rs.getObject("id", UUID.class), rs.getString("name")))
-                .optional()
-                .orElse(null);
+        FolderLink folder = folder(row.folderId());
         return new DocumentView(row.id(), row.title(), row.description(), row.category(), row.status(),
                 row.restricted(), new SpaceLink(space.id(), space.name(), space.slug(), space.color()), folder,
                 person(names, row.ownerId()), row.createdAt(), row.updatedAt(),
                 new VersionView(version.id(), version.number(), version.filename(), version.mediaType(),
                         version.sizeBytes(), version.language(), version.pageCount(), version.sectionCount(),
                         version.extractionStatus(), version.extractionError(), version.textTruncated(),
-                        version.extractedAt(), version.createdAt(), person(names, version.authorId())),
+                        version.extractedAt(), version.createdAt(), person(names, version.authorId()),
+                        version.sha256(), store.exists(space.organizationId(), version.sha256())),
                 actions, duplicateOf);
+    }
+
+    @Nullable FolderLink folder(@Nullable UUID folderId) {
+        return folderId == null ? null : jdbc.sql("select id, name from folder where id = ?")
+                .param(folderId)
+                .query((rs, n) -> new FolderLink(rs.getObject("id", UUID.class), rs.getString("name")))
+                .optional()
+                .orElse(null);
     }
 
     List<DocumentItem> items(UUID organizationId, List<DocumentRepository.Row> rows) {

@@ -298,6 +298,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The documents the person opened last and still sees, most recent first (size: 3 by default, 10 at most) */
+        get: operations["recent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{id}": {
         parameters: {
             query?: never;
@@ -305,7 +322,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A document, its current version and what the person may do with it */
+        /** A document, its current version and what the person may do with it; its opening is recorded in the audit log once an hour */
         get: operations["get_1"];
         put?: never;
         post?: never;
@@ -363,6 +380,57 @@ export interface paths {
         put?: never;
         /** Move a document to another folder of its space, or to its root with folderId null */
         post: operations["move"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Hand the document over to another member of the space, at least a contributor: its maintainers, or its owner */
+        put: operations["changeOwner"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/versions/{number}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The original file of a version, under its name: attachment (default), or inline for a PDF; ranges (206, 416), If-Range, If-None-Match (304), 410 file_missing. A download is recorded in the audit log */
+        get: operations["file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/versions/{number}/rendering": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A version laid out for reading (Markdown, Word, text), cleaned: the part asked (part), or the part that holds an anchor (anchor), or the first; the outline of the whole document unless outline=false. 409 extraction_pending, 409 no_rendering (a PDF, a failure) */
+        get: operations["rendering"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -618,7 +686,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A page of the documents of a space the person can see, by folder then most recent first; folder=none lists those without a folder, ids (100 at most) follows given documents */
+        /** A page of the documents of a space the person can see, by folder then in the order asked: sort is updated (default, most recent first), title, category, status or size, direction asc or desc; folder=none lists those without a folder, ids (100 at most) follows given documents */
         get: operations["list_3"];
         put?: never;
         /** Import a file into a space: a new document and its version 1, whose text is extracted next; duplicateOf names a document of the space with the same content */
@@ -801,6 +869,7 @@ export interface components {
             role: string;
         };
         DocumentActions: {
+            changeOwner: boolean;
             delete: boolean;
             edit: boolean;
             manageAccess: boolean;
@@ -1013,6 +1082,18 @@ export interface components {
             name: string;
             timeZone: string;
         };
+        OutlineEntry: {
+            anchor: string;
+            /** Format: int32 */
+            level: number;
+            /** Format: int32 */
+            part: number;
+            title: string;
+        };
+        OwnerChange: {
+            /** Format: uuid */
+            userId?: string | null;
+        };
         PageResponseDocumentItem: {
             items: components["schemas"]["DocumentItem"][];
             /** Format: int32 */
@@ -1044,6 +1125,29 @@ export interface components {
         ProfileUpdate: {
             displayName?: string | null;
             locale?: string | null;
+        };
+        RecentDocument: {
+            folder?: components["schemas"]["FolderLink"] | null;
+            /** Format: uuid */
+            id: string;
+            space: components["schemas"]["SpaceLink"];
+            status: string;
+            title: string;
+            /** Format: date-time */
+            viewedAt: string;
+        };
+        RenderingView: {
+            html: string;
+            /** Format: int32 */
+            number: number;
+            outline?: components["schemas"]["OutlineEntry"][] | null;
+            /** Format: int32 */
+            part: number;
+            /** Format: int32 */
+            partCount: number;
+            /** Format: int32 */
+            renderer: number;
+            truncated: boolean;
         };
         ResetDetails: {
             createdBy?: string | null;
@@ -1202,6 +1306,7 @@ export interface components {
             extractedAt?: string | null;
             extractionError?: string | null;
             extractionStatus: string;
+            fileAvailable: boolean;
             filename: string;
             /** Format: uuid */
             id: string;
@@ -1213,6 +1318,7 @@ export interface components {
             pageCount?: number | null;
             /** Format: int32 */
             sectionCount?: number | null;
+            sha256: string;
             /** Format: int64 */
             sizeBytes: number;
             textTruncated: boolean;
@@ -1712,6 +1818,28 @@ export interface operations {
             };
         };
     };
+    recent: {
+        parameters: {
+            query?: {
+                size?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentDocument"][];
+                };
+            };
+        };
+    };
     get_1: {
         parameters: {
             query?: never;
@@ -1872,6 +2000,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentView"];
+                };
+            };
+        };
+    };
+    changeOwner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerChange"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentView"];
+                };
+            };
+        };
+    };
+    file: {
+        parameters: {
+            query?: {
+                disposition?: string | null;
+            };
+            header?: never;
+            path: {
+                id: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    rendering: {
+        parameters: {
+            query?: {
+                part?: number | null;
+                anchor?: string | null;
+                outline?: boolean;
+            };
+            header?: never;
+            path: {
+                id: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderingView"];
                 };
             };
         };
@@ -2284,6 +2488,8 @@ export interface operations {
                 folder?: string | null;
                 restricted?: boolean | null;
                 ids?: string[] | null;
+                sort?: string | null;
+                direction?: string | null;
                 page?: number | null;
                 size?: number | null;
             };

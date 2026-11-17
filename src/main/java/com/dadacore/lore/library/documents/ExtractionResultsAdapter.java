@@ -36,6 +36,8 @@ class ExtractionResultsAdapter implements ExtractionResults {
         }
         DocumentRepository.Version version = found.get();
         documents.replaceChunks(versionId, extraction.chunks());
+        // Cleaned by the module of the extraction before this transaction.
+        documents.replaceRendering(versionId, extraction.rendering());
         // Sections are the places of the document (pages, parts under a title), not its chunks.
         int sections = (int) extraction.chunks().stream().map(chunk -> place(chunk.anchor())).distinct().count();
         documents.extracted(versionId, extraction.scanned() ? "SCANNED" : "INDEXED", extraction.language(),
@@ -51,6 +53,8 @@ class ExtractionResultsAdapter implements ExtractionResults {
     @Override
     public void failed(UUID versionId, String code) {
         documents.failed(versionId, code);
+        // A failed version shows its banner and its file only.
+        documents.replaceRendering(versionId, null);
     }
 
     private static String place(String anchor) {

@@ -25,6 +25,7 @@ import { Callout, checks, hasProblems, message, problemsOf, TextField, validate,
 import { Icon, Spinner } from '../ui/Icon';
 import { Menu, MenuItem, MenuSeparator } from '../ui/Menu';
 import { Modal } from '../ui/Modal';
+import { LIBRARY_COLUMNS, LIBRARY_SORTS, useLibraryView, type LibraryColumn } from '../ui/preferences';
 import { useNotify } from '../ui/Toast';
 import { canContribute, canManage, refreshSpaces, SpaceIcon, useSpace, type Space } from './spaces';
 import { spaceCrumbs } from './SpaceRoute';
@@ -38,7 +39,6 @@ type Dialog =
 
 /** Documents loaded per page; the server gives 200 at most. */
 const PAGE = 200;
-const COLUMNS = 10;
 /** The group of the documents at the root of the space, and the value of the filter for it. */
 const ROOT = 'none';
 
@@ -58,6 +58,10 @@ export function SpaceLibraryPage() {
   const [folded, setFolded] = useState<Set<string>>(() => new Set());
   const contributor = canContribute(space);
   const filter = params.get('folder');
+  const [view, setView] = useLibraryView();
+  const direction = view.direction ?? (view.sort === 'updated' ? 'desc' : 'asc');
+  const hidden = new Set<LibraryColumn>(view.hidden);
+  const columns = 2 + LIBRARY_COLUMNS.filter((column) => !hidden.has(column)).length;
   useDocumentTitle(space.name);
 
   const folders = useQuery({
@@ -70,9 +74,12 @@ export function SpaceLibraryPage() {
     refetchInterval: whileExtracting((data) => data.inProgress > 0),
   });
   const documents = useInfiniteQuery({
-    queryKey: keys.documents(space.id, filter ?? 'all'),
+    queryKey: [...keys.documents(space.id, filter ?? 'all'), view.sort, direction],
     queryFn: ({ pageParam }) => call(() => api.GET('/api/v1/spaces/{spaceId}/documents', {
-      params: { path: { spaceId: space.id }, query: { folder: filter ?? undefined, page: pageParam, size: PAGE } },
+      params: {
+        path: { spaceId: space.id },
+        query: { folder: filter ?? undefined, sort: view.sort, direction, page: pageParam, size: PAGE },
+      },
     })),
     initialPageParam: 0,
     // Another folder shown: the grid stays in place until it arrives, never with another space's documents.
@@ -220,22 +227,51 @@ export function SpaceLibraryPage() {
                     </MenuItem>
                   ))}
                 </Menu>
+                <Menu
+                  triggerClassName={view.sort !== 'updated' || view.direction ? 'tool is-on-blue' : 'tool'}
+                  label={t('library.sortBy', { field: t(`library.sort.${view.sort}`) })}
+                  trigger={<><Icon name="sort" />{t('library.sortBy', { field: t(`library.sort.${view.sort}`) })}</>}
+                >
+                  {LIBRARY_SORTS.map((sort) => (
+                    <MenuItem key={sort} checked={view.sort === sort} onSelect={() => setView({ sort, direction: null })}>
+                      {t(`library.sort.${sort}`)}
+                    </MenuItem>
+                  ))}
+                  <MenuSeparator />
+                  <MenuItem checked={direction === 'asc'} onSelect={() => setView({ direction: 'asc' })}>{t('library.sort.asc')}</MenuItem>
+                  <MenuItem checked={direction === 'desc'} onSelect={() => setView({ direction: 'desc' })}>{t('library.sort.desc')}</MenuItem>
+                </Menu>
+                <Menu
+                  triggerClassName={hidden.size > 0 ? 'tool is-on-blue' : 'tool'}
+                  label={t('library.columns')}
+                  trigger={<><Icon name="columns" />{t('library.columns')}</>}
+                >
+                  {LIBRARY_COLUMNS.map((column) => (
+                    <MenuItem
+                      key={column}
+                      checked={!hidden.has(column)}
+                      onSelect={() => setView({ hidden: hidden.has(column) ? view.hidden.filter((other) => other !== column) : [...view.hidden, column] })}
+                    >
+                      {t(`library.col.${column}`)}
+                    </MenuItem>
+                  ))}
+                </Menu>
               </div>
               <div className="set-box is-flush" style={{ marginTop: 0 }}>
                 <HorizontalScroll stickyFirstColumn>
-                  <table className="grid" style={{ minWidth: 1160 }}>
+                  <table className="grid" style={{ minWidth: 400 + 95 * (columns - 2) }}>
                     <thead>
                       <tr>
                         <th className="rn"><span className="sr-only">#</span></th>
                         <th className="primary"><span className="th"><Icon name="text" />{t('library.col.title')}</span></th>
-                        <th><span className="th"><Icon name="tag" />{t('library.col.status')}</span></th>
-                        <th><span className="th"><Icon name="tag" />{t('library.col.category')}</span></th>
-                        <th><span className="th"><Icon name="user" />{t('library.col.owner')}</span></th>
-                        <th><span className="th"><Icon name="calendar" />{t('library.col.updated')}</span></th>
-                        <th><span className="th"><Icon name="hash" />{t('library.col.version')}</span></th>
-                        <th><span className="th"><Icon name="tag" />{t('library.col.indexing')}</span></th>
-                        <th><span className="th"><Icon name="globe" />{t('library.col.language')}</span></th>
-                        <th><span className="th"><Icon name="file" />{t('library.col.format')}</span></th>
+                        {!hidden.has('status') && <th><span className="th"><Icon name="tag" />{t('library.col.status')}</span></th>}
+                        {!hidden.has('category') && <th><span className="th"><Icon name="tag" />{t('library.col.category')}</span></th>}
+                        {!hidden.has('owner') && <th><span className="th"><Icon name="user" />{t('library.col.owner')}</span></th>}
+                        {!hidden.has('updated') && <th><span className="th"><Icon name="calendar" />{t('library.col.updated')}</span></th>}
+                        {!hidden.has('version') && <th><span className="th"><Icon name="hash" />{t('library.col.version')}</span></th>}
+                        {!hidden.has('indexing') && <th><span className="th"><Icon name="tag" />{t('library.col.indexing')}</span></th>}
+                        {!hidden.has('language') && <th><span className="th"><Icon name="globe" />{t('library.col.language')}</span></th>}
+                        {!hidden.has('format') && <th><span className="th"><Icon name="file" />{t('library.col.format')}</span></th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -245,7 +281,7 @@ export function SpaceLibraryPage() {
                         return (
                           <Fragment key={group.key}>
                             <tr className="group-row">
-                              <td colSpan={COLUMNS}>
+                              <td colSpan={columns}>
                                 <div className="group-head">
                                   <button type="button" className="group-toggle" aria-expanded={open} onClick={() => toggleGroup(group.key)}>
                                     <Icon name="chevron" />
@@ -263,9 +299,11 @@ export function SpaceLibraryPage() {
                                 </div>
                               </td>
                             </tr>
-                            {open && group.documents.map((item) => <DocumentRow key={item.id} item={item} number={numbers.get(item.id) ?? 0} />)}
+                            {open && group.documents.map((item) => (
+                              <DocumentRow key={item.id} item={item} number={numbers.get(item.id) ?? 0} hidden={hidden} />
+                            ))}
                             {open && group.documents.length === 0 && !documents.hasNextPage && (
-                              <tr><td className="cell-note" colSpan={COLUMNS}>{t('library.emptyFolder')}</td></tr>
+                              <tr><td className="cell-note" colSpan={columns}>{t('library.emptyFolder')}</td></tr>
                             )}
                           </Fragment>
                         );
@@ -332,7 +370,7 @@ function FolderMenu({ folder, onRename, onDelete }: { folder: Folder; onRename: 
 }
 
 /** A line of the grid: the title with the icon of its format and a lock when restricted. */
-function DocumentRow({ item, number }: { item: DocumentItem; number: number }) {
+function DocumentRow({ item, number, hidden }: { item: DocumentItem; number: number; hidden: Set<LibraryColumn> }) {
   const i18n = useI18n();
   const { t } = i18n;
   return (
@@ -347,14 +385,14 @@ function DocumentRow({ item, number }: { item: DocumentItem; number: number }) {
           )}
         </div>
       </td>
-      <td><StatusLabel status={item.status} /></td>
-      <td>{item.category && <CategoryPill category={item.category} />}</td>
-      <td><Owner owner={item.owner} /></td>
-      <td>{i18n.relative(item.updatedAt)}</td>
-      <td className="num">{item.version}</td>
-      <td><IndexPill document={item} /></td>
-      <td>{languageName(i18n, item.language)}</td>
-      <td>{formatName(i18n, item.mediaType)}</td>
+      {!hidden.has('status') && <td><StatusLabel status={item.status} /></td>}
+      {!hidden.has('category') && <td>{item.category && <CategoryPill category={item.category} />}</td>}
+      {!hidden.has('owner') && <td><Owner owner={item.owner} /></td>}
+      {!hidden.has('updated') && <td>{i18n.relative(item.updatedAt)}</td>}
+      {!hidden.has('version') && <td className="num">{item.version}</td>}
+      {!hidden.has('indexing') && <td><IndexPill document={item} /></td>}
+      {!hidden.has('language') && <td>{languageName(i18n, item.language)}</td>}
+      {!hidden.has('format') && <td>{formatName(i18n, item.mediaType)}</td>}
     </tr>
   );
 }
