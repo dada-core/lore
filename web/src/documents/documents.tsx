@@ -120,6 +120,9 @@ export function sizeText(i18n: I18n, bytes: number): string {
   return i18n.t(`size.${UNITS[unit]}`, { n });
 }
 
+/** The languages a document is indexed in; a contributor may correct the one detected. */
+export const LANGUAGES = ['fr', 'en', 'other'] as const;
+
 export function languageName(i18n: I18n, language: string | null | undefined): string | null {
   if (language === 'fr' || language === 'en' || language === 'other') return i18n.t(`language.${language}`);
   return null;

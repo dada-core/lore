@@ -1,0 +1,497 @@
+{
+ "targets": [
+  {
+   "key": "restaurer-pg",
+   "title": "Restaurer une base PostgreSQL depuis une sauvegarde",
+   "description": "Runbook de restauration testé chaque trimestre.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "1. Prérequis"
+     ],
+     "t": "Vérifiez que la dernière sauvegarde complète est disponible sur le serveur de sauvegarde et que pg_basebackup a terminé sans erreur. Notez l’heure de la sauvegarde."
+    },
+    {
+     "h": [
+      "2. Restaurer la base"
+     ],
+     "t": "Arrêtez l’application, puis lancez pg_restore --jobs=4 --no-owner --dbname=facturation /srv/backup/facturation.dump. La restauration prend une vingtaine de minutes."
+    },
+    {
+     "h": [
+      "4. Vérifier la restauration",
+      "4.1 Contrôles"
+     ],
+     "t": "Comptez les lignes des tables principales et comparez-les au rapport de la sauvegarde."
+    },
+    {
+     "h": [
+      "4. Vérifier la restauration",
+      "4.2 Erreurs fréquentes"
+     ],
+     "t": "Si pg_restore signale pg_restore: error: role \"reporting\" does not exist, créez le rôle avant de relancer : CREATE ROLE reporting NOLOGIN; puis relancez la restauration."
+    }
+   ]
+  },
+  {
+   "key": "inc-2291",
+   "title": "Incident INC-2291 : disque saturé sur pg-prod-02",
+   "description": "Rapport d’incident du 3 novembre.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Chronologie"
+     ],
+     "t": "À 02:14, l’alerte disque plein se déclenche sur pg-prod-02 (10.0.3.17). Le répertoire /var/lib/postgresql/18/main/pg_wal occupe 480 Go."
+    },
+    {
+     "h": [
+      "Cause"
+     ],
+     "t": "La commande archive_command échouait depuis six jours : les journaux WAL non archivés se sont accumulés jusqu’à saturer le disque."
+    },
+    {
+     "h": [
+      "Actions"
+     ],
+     "t": "Corriger archive_command, surveiller la taille de pg_wal, ajouter une alerte à 70 %."
+    }
+   ]
+  },
+  {
+   "key": "barman",
+   "title": "Sauvegardes nocturnes avec Barman (ancienne procédure)",
+   "description": "Remplacée par la procédure pgBackRest.",
+   "lang": "fr",
+   "status": "OBSOLETE",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Sauvegarde"
+     ],
+     "t": "Chaque nuit, barman backup pg-prod-02 réalise une sauvegarde complète. Vérifiez le résultat avec barman check."
+    },
+    {
+     "h": [
+      "Restauration"
+     ],
+     "t": "Pour restaurer, utilisez barman recover vers le répertoire de données du serveur cible."
+    }
+   ]
+  },
+  {
+   "key": "bascule-k8s",
+   "title": "Bascule du cluster Kubernetes vers le site de secours",
+   "description": "Procédure de bascule testée deux fois par an.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "1. Préparer la bascule"
+     ],
+     "t": "Vérifiez la réplication des volumes vers le site de secours et gelez les déploiements."
+    },
+    {
+     "h": [
+      "2. Basculer"
+     ],
+     "t": "Exécutez kubectl rollout restart deployment/api dans l’espace de noms production, puis vérifiez les pods de kube-system."
+    },
+    {
+     "h": [
+      "3. Problèmes connus"
+     ],
+     "t": "Si le navigateur affiche ERR_CONNECTION_REFUSED, l’ingress du site de secours n’a pas encore repris l’adresse publique."
+    }
+   ]
+  },
+  {
+   "key": "guide-baie",
+   "title": "Storage array administration guide",
+   "description": "Vendor guide for the storage arrays of room B.",
+   "lang": "en",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [],
+     "t": "Chapter 7. Controller failover. When a controller fails, the partner controller takes over every LUN within thirty seconds."
+    },
+    {
+     "h": [],
+     "t": "Chapter 9. Firmware upgrade. Upgrade the firmware of one controller at a time, during a maintenance window."
+    },
+    {
+     "h": [],
+     "t": "Chapter 12. Replication. Asynchronous replication sends snapshots to the remote array every fifteen minutes."
+    }
+   ]
+  },
+  {
+   "key": "rotation-tls",
+   "title": "Rotation des certificats TLS internes",
+   "description": "Renouvellement annuel des certificats de l’autorité interne.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Renouveler"
+     ],
+     "t": "Générez une nouvelle clé avec openssl, faites signer la demande par l’autorité interne, puis déployez le certificat sur chaque service."
+    },
+    {
+     "h": [
+      "Vérifier"
+     ],
+     "t": "Contrôlez la date d’expiration avec openssl x509 -enddate -noout -in service.crt."
+    }
+   ]
+  },
+  {
+   "key": "cert-api",
+   "title": "Certificat interne expiré sur l’API de facturation",
+   "description": "Incident du 21 octobre.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Symptôme"
+     ],
+     "t": "Les appels vers l’API de facturation échouaient avec x509: certificate has expired or is not yet valid."
+    },
+    {
+     "h": [
+      "Correction"
+     ],
+     "t": "Le certificat a été renouvelé et la rotation automatique ajoutée au calendrier."
+    }
+   ]
+  },
+  {
+   "key": "migration-pg18",
+   "title": "Migration vers PostgreSQL 18",
+   "description": "Plan de migration des bases de production.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Méthode"
+     ],
+     "t": "Utilisez pg_upgrade --link pour migrer sans copier les fichiers de données. Testez d’abord sur une copie."
+    },
+    {
+     "h": [
+      "Paramètres"
+     ],
+     "t": "Reportez max_connections, shared_buffers et work_mem depuis l’ancienne configuration."
+    }
+   ]
+  },
+  {
+   "key": "vpn-mtu",
+   "title": "Connexions VPN qui se figent après quelques minutes",
+   "description": "Fiche de résolution.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Symptôme"
+     ],
+     "t": "La connexion VPN se fige au bout de quelques minutes ; le navigateur affiche ERR_CONN_RESET."
+    },
+    {
+     "h": [
+      "Cause et correction"
+     ],
+     "t": "Les paquets trop grands sont perdus : réglez la MTU de l’interface à 1400."
+    }
+   ]
+  },
+  {
+   "key": "ldap-delais",
+   "title": "Délais de connexion à l’annuaire LDAP le lundi matin",
+   "description": "Analyse des lenteurs de l’annuaire.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Constat"
+     ],
+     "t": "Le lundi matin, la connexion des postes prend jusqu’à une minute : l’annuaire LDAP répond lentement."
+    },
+    {
+     "h": [
+      "Cause"
+     ],
+     "t": "La synchronisation hebdomadaire des groupes tourne encore à l’arrivée des équipes."
+    }
+   ]
+  },
+  {
+   "key": "plan-reprise",
+   "title": "Plan de reprise d’activité 2026",
+   "description": "Objectifs de reprise et ordre de remise en service.",
+   "lang": "fr",
+   "status": "DRAFT",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Reprise de la base de facturation"
+     ],
+     "t": "En cas de perte du serveur principal, la base de facturation est remise en service sur pg-prod-03 à partir de la dernière sauvegarde complète."
+    }
+   ]
+  },
+  {
+   "key": "schema-cablage",
+   "title": "Schéma de câblage de la salle serveurs B",
+   "description": "Plan scanné des baies, des commutateurs et des onduleurs de la salle B.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": true,
+   "passages": []
+  },
+  {
+   "key": "redemarrage",
+   "title": "Redémarrage du serveur de fichiers",
+   "description": "Procédure d’arrêt et de démarrage.",
+   "lang": "fr",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Redémarrage"
+     ],
+     "t": "Prévenez les équipes, arrêtez le partage, puis redémarrez le serveur de fichiers. Le redémarrage prend cinq minutes."
+    }
+   ]
+  },
+  {
+   "key": "billing-restore",
+   "title": "Restoring the billing database",
+   "description": "Runbook in English for the night team.",
+   "lang": "en",
+   "status": "PUBLISHED",
+   "scanned": false,
+   "passages": [
+    {
+     "h": [
+      "Restore"
+     ],
+     "t": "Stop the billing application, then restore the latest dump of the billing database with pg_restore."
+    },
+    {
+     "h": [
+      "Check"
+     ],
+     "t": "Compare the row counts with the report of the backup."
+    }
+   ]
+  }
+ ],
+ "relevance": [
+  [
+   "pg_restore: error: role \"reporting\" does not exist",
+   "restaurer-pg"
+  ],
+  [
+   "pg_restore role \"does not exist\"",
+   "restaurer-pg"
+  ],
+  [
+   "CREATE ROLE reporting",
+   "restaurer-pg"
+  ],
+  [
+   "restaurer une base postgresql",
+   "restaurer-pg"
+  ],
+  [
+   "INC-2291",
+   "inc-2291"
+  ],
+  [
+   "disque saturé pg-prod-02",
+   "inc-2291"
+  ],
+  [
+   "journaux WAL non archivés",
+   "inc-2291"
+  ],
+  [
+   "10.0.3.17",
+   "inc-2291"
+  ],
+  [
+   "/var/lib/postgresql/18/main/pg_wal",
+   "inc-2291"
+  ],
+  [
+   "archive_command",
+   "inc-2291"
+  ],
+  [
+   "kubectl rollout restart deployment/api",
+   "bascule-k8s"
+  ],
+  [
+   "bascule kubernetes site de secours",
+   "bascule-k8s"
+  ],
+  [
+   "basculer le cluster",
+   "bascule-k8s"
+  ],
+  [
+   "ERR_CONNECTION_REFUSED ingress",
+   "bascule-k8s"
+  ],
+  [
+   "controller failover LUN",
+   "guide-baie"
+  ],
+  [
+   "firmware upgrade storage array",
+   "guide-baie"
+  ],
+  [
+   "renouveler les certificats internes",
+   "rotation-tls"
+  ],
+  [
+   "\"openssl x509 -enddate\"",
+   "rotation-tls"
+  ],
+  [
+   "certificat expiré API facturation",
+   "cert-api"
+  ],
+  [
+   "x509: certificate has expired",
+   "cert-api"
+  ],
+  [
+   "pg_upgrade --link",
+   "migration-pg18"
+  ],
+  [
+   "migrer vers PostgreSQL 18",
+   "migration-pg18"
+  ],
+  [
+   "VPN se fige MTU",
+   "vpn-mtu"
+  ],
+  [
+   "ERR_CONN_RESET",
+   "vpn-mtu"
+  ],
+  [
+   "annuaire LDAP lent le lundi",
+   "ldap-delais"
+  ],
+  [
+   "plan de reprise d’activité",
+   "plan-reprise"
+  ],
+  [
+   "pg-prod-03",
+   "plan-reprise"
+  ],
+  [
+   "câblage salle serveurs B",
+   "schema-cablage"
+  ],
+  [
+   "redemarrer serveurs",
+   "redemarrage"
+  ],
+  [
+   "restoring the billing database",
+   "billing-restore"
+  ]
+ ],
+ "neighbours": [
+  {
+   "title": "Redémarrage des serveurs Windows",
+   "lang": "fr",
+   "text": "Planifiez le redémarrage des serveurs Windows après les mises à jour mensuelles."
+  },
+  {
+   "title": "Supervision du cluster Ceph",
+   "lang": "fr",
+   "text": "Le cluster Ceph remonte ses alertes dans la supervision ; vérifiez l’état des disques."
+  },
+  {
+   "title": "Bascule DNS du site principal",
+   "lang": "fr",
+   "text": "Modifiez les enregistrements DNS pour basculer le trafic vers le site principal."
+  },
+  {
+   "title": "Certificats clients du VPN",
+   "lang": "fr",
+   "text": "Chaque poste reçoit un certificat client pour le VPN ; il expire au bout d’un an."
+  },
+  {
+   "title": "Sauvegarde des postes de travail",
+   "lang": "fr",
+   "text": "Les postes sont sauvegardés chaque nuit sur le serveur de fichiers."
+  },
+  {
+   "title": "Incident INC-1874 : lenteurs de l’intranet",
+   "lang": "fr",
+   "text": "Le proxy 10.0.4.22 saturait ; le service nginx a été redémarré."
+  },
+  {
+   "title": "Network troubleshooting guide",
+   "lang": "en",
+   "text": "Check the MTU, the routes and the firewall rules before escalating."
+  },
+  {
+   "title": "Rapport d’audit des accès LDAP",
+   "lang": "fr",
+   "text": "L’annuaire LDAP conserve les connexions des administrateurs pendant un an."
+  },
+  {
+   "title": "Restauration des fichiers supprimés",
+   "lang": "fr",
+   "text": "Pour restaurer un fichier supprimé, utilisez la corbeille du partage réseau."
+  },
+  {
+   "title": "PostgreSQL : paramètres de performance",
+   "lang": "fr",
+   "text": "Ajustez shared_buffers et work_mem selon la mémoire du serveur de base de données."
+  },
+  {
+   "title": "Kubernetes : déployer une application",
+   "lang": "fr",
+   "text": "Créez le deployment, puis exposez le service avec un ingress sur le cluster."
+  },
+  {
+   "title": "Storage array maintenance contract",
+   "lang": "en",
+   "text": "The vendor replaces a failed controller within four hours, firmware included."
+  }
+ ]
+}

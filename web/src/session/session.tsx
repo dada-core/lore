@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext } from 'react';
 import { api, call, type CurrentUser, type Role, type SessionInfo } from '../api/client';
 import { keys, queryClient } from '../api/queryClient';
+import { forgetSearches } from '../search/search';
 
 /** Why the person no longer has a session: the sign-in page says it. */
 export type SignOutReason = 'signedOut' | 'expired';
@@ -43,6 +44,8 @@ export function expireSession(): void {
 }
 
 export async function signOut(): Promise<void> {
+  // The recent searches of this browser go with the session: a shared computer keeps none.
+  forgetSearches();
   try {
     await call(() => api.POST('/api/v1/auth/logout'));
   } finally {

@@ -52,6 +52,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class Documents {
 
     static final int MAX_DESCRIPTION = 2000;
+    /** The languages a document is indexed in. */
+    static final Set<String> LANGUAGES = Set.of("fr", "en", "other");
+    private static final java.util.regex.Pattern CONTROL = java.util.regex.Pattern.compile("\\p{Cc}");
+    private static final java.util.regex.Pattern CONTROL_BUT_LINES = java.util.regex.Pattern.compile("[\\p{Cc}&&[^\\n\\t]]");
     static final int MAX_IDS = 100;
     static final int ATTENTION = 20;
     static final Set<String> PASSING_FAILURES = ExtractionResults.PASSING_FAILURES;
@@ -100,8 +104,13 @@ public class Documents {
         this.audit = audit;
     }
 
-    /** The changes of a document; a field left out keeps its value, an empty one is removed. */
-    record DocumentChanges(@Nullable String title, @Nullable String description, @Nullable String category) {
+    /**
+     * The changes of a document; a field left out keeps its value, an empty one is removed.
+     *
+     * @param language {@code fr}, {@code en} or {@code other}: the document is indexed again in it
+     */
+    record DocumentChanges(@Nullable String title, @Nullable String description, @Nullable String category,
+            @Nullable String language) {
     }
 
     /** {@code folderId} null: to the root of the space. */
@@ -194,16 +203,23 @@ public class Documents {
         return view(viewer, opened, null);
     }
 
-    /** Field errors {@code title:required}, {@code title:too_long}, {@code description:too_long}, {@code category:invalid_value}. */
+    /**
+     * Field errors {@code title:required}, {@code title:too_long}, {@code description:too_long},
+     * {@code category:invalid_value}, {@code language:invalid_value}; {@code 409 extraction_pending}
+     * for a language changed while the text is extracted.
+     */
     @Transactional
     DocumentView update(Viewer viewer, UUID id, DocumentChanges changes) {
         Opened opened = openForChange(viewer, id, SpaceRole.CONTRIBUTOR);
         DocumentRepository.Row row = opened.row();
         Checks checks = Checks.start();
-        String title = changes.title() == null ? row.title() : checks.text("title", changes.title(), Titles.MAX_TITLE);
+        // Control characters out: they would read as the marks of the words found by the search.
+        String title = changes.title() == null ? row.title()
+                : checks.text("title", CONTROL.matcher(changes.title()).replaceAll(" "), Titles.MAX_TITLE);
         String description = row.description();
         if (changes.description() != null) {
-            description = changes.description().strip().isEmpty() ? null : changes.description().strip();
+            String written = CONTROL_BUT_LINES.matcher(changes.description()).replaceAll(" ").strip();
+            description = written.isEmpty() ? null : written;
             if (description != null && description.length() > MAX_DESCRIPTION) {
                 checks.fail("description", "too_long", Map.of("max", MAX_DESCRIPTION));
             }
@@ -212,7 +228,20 @@ public class Documents {
         if (changes.category() != null) {
             category = changes.category().isBlank() ? null : name(checks.oneOf("category", changes.category(), Category.class));
         }
+        DocumentRepository.Version version = row.version();
+        String language = version.language();
+        if (changes.language() != null) {
+            language = changes.language().strip().toLowerCase(Locale.ROOT);
+            if (!LANGUAGES.contains(language)) {
+                checks.fail("language", "invalid_value");
+            }
+        }
         checks.orThrow();
+        boolean relanguaged = !Objects.equals(language, version.language());
+        if (relanguaged && "PENDING".equals(version.extractionStatus())) {
+            // Detected at the end of the extraction, which would also write the passages again.
+            throw ApiException.conflict("extraction_pending");
+        }
         List<String> changed = new ArrayList<>();
         if (!title.equals(row.title())) {
             changed.add("title");
@@ -223,12 +252,19 @@ public class Documents {
         if (!Objects.equals(category, row.category())) {
             changed.add("category");
         }
+        if (relanguaged) {
+            changed.add("language");
+        }
         if (!changed.isEmpty()) {
             documents.update(row.id(), title, description, category);
+            if (relanguaged) {
+                documents.changeLanguage(row.id(), version.id(), language);
+            }
             spaces.touch(opened.space().id());
             audit.record(entry(viewer, opened, "document.updated")
                     .detail("changes", changed)
                     .detail("previousTitle", changed.contains("title") ? row.title() : null)
+                    .detail("previousLanguage", relanguaged ? version.language() : null)
                     .build());
         }
         return view(viewer, reload(viewer, opened), null);

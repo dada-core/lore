@@ -22,6 +22,10 @@ describe('the place of the address', () => {
     expect(termsOf('pg_restore role "does not exist" a')).toEqual(['does not exist', 'pg_restore', 'role']);
   });
 
+  it('leaves out the syntax of the search: or, and the words left out', () => {
+    expect(termsOf('pg_restore or pg_dump -barman -"old way" kube-system --no-owner')).toEqual(['pg_restore', 'pg_dump', 'kube-system', '--no-owner']);
+  });
+
   it('gives a section its version', () => {
     expect(sectionLink('d1', 3, 'h-7')).toBe(`${window.location.origin}/documents/d1?v=3#h-7`);
   });

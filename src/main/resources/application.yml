@@ -81,3 +81,6 @@ management:
 logging:
   level:
     root: ${lore.log-level}
+    # These two write the address of each request, the words searched with it, at the DEBUG level.
+    org.springframework.security.web.FilterChainProxy: INFO
+    org.springframework.web.servlet.DispatcherServlet: INFO

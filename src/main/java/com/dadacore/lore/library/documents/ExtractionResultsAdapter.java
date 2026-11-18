@@ -35,13 +35,15 @@ class ExtractionResultsAdapter implements ExtractionResults {
             return;
         }
         DocumentRepository.Version version = found.get();
-        documents.replaceChunks(versionId, extraction.chunks());
-        // Cleaned by the module of the extraction before this transaction.
-        documents.replaceRendering(versionId, extraction.rendering());
         // Sections are the places of the document (pages, parts under a title), not its chunks.
         int sections = (int) extraction.chunks().stream().map(chunk -> place(chunk.anchor())).distinct().count();
-        documents.extracted(versionId, extraction.scanned() ? "SCANNED" : "INDEXED", extraction.language(),
-                extraction.pageCount(), sections, extraction.truncated());
+        // The language detected, unless a person chose one for this version.
+        String language = documents.extracted(versionId, extraction.scanned() ? "SCANNED" : "INDEXED",
+                extraction.language(), extraction.pageCount(), sections, extraction.truncated());
+        documents.replaceChunks(versionId, extraction.chunks(), language);
+        documents.searchLanguage(versionId);
+        // Cleaned by the module of the extraction before this transaction.
+        documents.replaceRendering(versionId, extraction.rendering());
         String title = extraction.title();
         if (title != null && !title.isBlank() && MARKDOWN.equals(version.mediaType())) {
             // The first title of a Markdown file names the document, unless someone named it already.

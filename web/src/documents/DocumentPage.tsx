@@ -8,11 +8,13 @@ import { useI18n } from '../i18n/i18n';
 import { isTyping, View, type Crumb } from '../layouts/AppShell';
 import { ConfirmDialog } from '../pages/admin/MemberDialogs';
 import { NotFoundPage } from '../pages/NotFoundPage';
+import { fromSearch, searchAddress } from '../search/search';
 import { SpaceIcon } from '../spaces/spaces';
 import { Avatar, copyText, useDocumentTitle } from '../ui/bits';
 import { Callout, checks, hasProblems, message, problemsOf, TextField, validate, type Problems } from '../ui/forms';
 import { Icon, Spinner } from '../ui/Icon';
 import { Menu, MenuItem, MenuSeparator } from '../ui/Menu';
+import { Modal } from '../ui/Modal';
 import { usePanel } from '../ui/preferences';
 import { useNotify } from '../ui/Toast';
 import { AccessDialog, DescriptionDialog, LinkDialog, MoveDialog, OwnerDialog } from './DocumentDialogs';
@@ -28,6 +30,7 @@ import {
   IndexPill,
   indexedText,
   isPdf,
+  LANGUAGES,
   languageName,
   Owner,
   refreshDocuments,
@@ -42,7 +45,7 @@ import { documentLink, readTarget, sectionLink } from './reader/target';
 
 const MAX_TITLE = 200;
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-type Dialog = 'access' | 'move' | 'delete' | 'description' | 'owner';
+type Dialog = 'access' | 'move' | 'delete' | 'description' | 'owner' | 'language';
 
 // pdf.js and its viewer are loaded only when a PDF is opened.
 const PdfViewer = lazy(() => import('./reader/PdfViewer'));
@@ -123,10 +126,12 @@ function DocumentView({ document }: { document: Document }) {
     setNotice(null);
     if (next.version === null || next.version === version.number) navigation.current?.go(next.place, next.query);
   }, [location.search, location.hash, version.number]);
+  // The state of the address goes with it: a result opened keeps its words and its way back.
   const followPlace = useCallback((place: string) => {
     shown.current = place;
-    navigate({ pathname: location.pathname, search: location.search, hash: place }, { replace: true, preventScrollReset: true });
-  }, [navigate, location.pathname, location.search]);
+    navigate({ pathname: location.pathname, search: location.search, hash: place },
+      { replace: true, preventScrollReset: true, state: location.state });
+  }, [navigate, location.pathname, location.search, location.state]);
   const otherVersion = target.version !== null && target.version !== version.number;
   const pdf = isPdf(version.mediaType);
   const fileUrl = `/api/v1/documents/${document.id}/versions/${version.number}/file`;
@@ -152,6 +157,24 @@ function DocumentView({ document }: { document: Document }) {
     },
     onError: (error) => notify(errorMessage(i18n, error)),
   });
+
+  const changeLanguage = useMutation({
+    mutationFn: (language: string) => call(() => api.PATCH('/api/v1/documents/{id}', {
+      params: { path: { id: document.id } },
+      body: { language },
+    })),
+    onSuccess: (changed) => {
+      queryClient.setQueryData(keys.document(document.id), changed);
+      void refreshDocuments(space.id);
+      setDialog(null);
+      notify(t('language.changed'));
+    },
+    onError: (error) => {
+      setDialog(null);
+      notify(errorMessage(i18n, error));
+    },
+  });
+  const [language, setLanguage] = useState<string | null>(null);
 
   const retry = useMutation({
     mutationFn: () => call(() => api.POST('/api/v1/documents/{id}/extraction/retry', { params: { path: { id: document.id } } })),
@@ -204,7 +227,19 @@ function DocumentView({ document }: { document: Document }) {
   const found = target.fromSearch && target.query.trim() !== '' && target.place !== null && notice !== 'missing' && !otherVersion;
   const shortQuery = target.query.length > 80 ? `${target.query.slice(0, 80)}…` : target.query;
   // A link made for another version opens at the top: the versions arrive with a later version of Lore.
-  const reader = otherVersion ? { ...target, place: null, page: null, query: '' } : target;
+  // From a result: the forms found ("serveur" for "serveurs") are highlighted too; a copied link
+  // carries the words of q only.
+  const search = target.fromSearch ? fromSearch(location.state) : null;
+  const highlighted = search?.words.length ? { ...target, query: `${target.query} ${search.words.join(' ')}` } : target;
+  const reader = otherVersion ? { ...target, place: null, page: null, query: '' } : highlighted;
+  // Opened from the results: back in the history, which finds the list as it was. Opened from a
+  // link: the results of its words.
+  const backToResults = () => {
+    // A page reached within Lore has an entry before it; the first page opened has the key "default".
+    if (search && location.key !== 'default') navigate(-1);
+    else navigate(searchAddress(target.query));
+  };
+  const fromResults = target.fromSearch && target.query.trim() !== '';
 
   const menu = (
     <Menu align="end" label={t('document.moreActions')} trigger={<Icon name="dots" />}>
@@ -253,6 +288,16 @@ function DocumentView({ document }: { document: Document }) {
               <div className="callout callout-found" role="status">
                 <Icon name="highlight" />
                 <p>{foundAt ? t('reader.found', { query: shortQuery, place: foundAt }) : t('reader.foundHere', { query: shortQuery })}</p>
+                <button type="button" className="btn" onClick={backToResults}>
+                  <Icon name="chevron-left" />{t('search.backToResults')}
+                </button>
+              </div>
+            )}
+            {fromResults && !found && (
+              <div className="from-search">
+                <button type="button" className="btn" onClick={backToResults}>
+                  <Icon name="chevron-left" />{t('search.backToResults')}
+                </button>
               </div>
             )}
             {notice === 'missing' && <Callout role="status">{t('reader.missing')}</Callout>}
@@ -376,9 +421,36 @@ function DocumentView({ document }: { document: Document }) {
           navigationRef={navigation}
           onDialog={setDialog}
           onCategory={(category) => changeCategory.mutate(category)}
+          onLanguage={(chosen) => {
+            setLanguage(chosen);
+            setDialog('language');
+          }}
         />
       </div>
 
+      {dialog === 'language' && language && (
+        <Modal
+          title={t('language.confirmTitle')}
+          onClose={() => setDialog(null)}
+          footer={(
+            <>
+              <button type="button" className="btn" onClick={() => setDialog(null)}>{t('common.cancel')}</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                data-autofocus
+                disabled={changeLanguage.isPending}
+                onClick={() => changeLanguage.mutate(language)}
+              >
+                {changeLanguage.isPending && <Spinner />}
+                {t('language.confirm')}
+              </button>
+            </>
+          )}
+        >
+          <p>{t('language.confirmBody')}</p>
+        </Modal>
+      )}
       {dialog === 'access' && <AccessDialog document={document} onClose={() => setDialog(null)} />}
       {dialog === 'move' && <MoveDialog document={document} onClose={() => setDialog(null)} />}
       {dialog === 'description' && <DescriptionDialog document={document} onClose={() => setDialog(null)} />}
@@ -467,13 +539,15 @@ function TitleForm({ document, onDone }: { document: Document; onDone: () => voi
 }
 
 /** The panel on the right: properties, access, versions and the outline of the document. */
-function Properties({ document, outline, reading, navigationRef, onDialog, onCategory }: {
+function Properties({ document, outline, reading, navigationRef, onDialog, onCategory, onLanguage }: {
   document: Document;
   outline: OutlineItem[];
   reading: string | null;
   navigationRef: RefObject<Navigation | null>;
   onDialog: (dialog: Dialog) => void;
   onCategory: (category: string) => void;
+  /** A language chosen in the menu, to confirm. */
+  onLanguage: (language: string) => void;
 }) {
   const i18n = useI18n();
   const { t } = i18n;
@@ -553,7 +627,27 @@ function Properties({ document, outline, reading, navigationRef, onDialog, onCat
           </div>
           <div className="prop">
             <dt>{t('document.prop.language')}</dt>
-            <dd><span className="prop-val prop-static">{languageName(i18n, version.language) ?? <span className="muted">{t('document.languageUnknown')}</span>}</span></dd>
+            <dd>
+              {actions.edit && version.extractionStatus !== 'PENDING' ? (
+                <Menu
+                  triggerClassName="prop-val"
+                  label={t('language.menu', { name: languageName(i18n, version.language) ?? t('document.languageUnknown') })}
+                  trigger={languageName(i18n, version.language) ?? <span className="muted">{t('document.languageUnknown')}</span>}
+                >
+                  {LANGUAGES.map((language) => (
+                    <MenuItem
+                      key={language}
+                      checked={version.language === language}
+                      onSelect={() => version.language !== language && onLanguage(language)}
+                    >
+                      {languageName(i18n, language)}
+                    </MenuItem>
+                  ))}
+                </Menu>
+              ) : (
+                <span className="prop-val prop-static">{languageName(i18n, version.language) ?? <span className="muted">{t('document.languageUnknown')}</span>}</span>
+              )}
+            </dd>
           </div>
           <div className="prop">
             <dt>{t('document.prop.format')}</dt>
