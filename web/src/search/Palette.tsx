@@ -100,7 +100,10 @@ export function Palette({ onClose, canImport, onImport, onCreateSpace }: {
       { key: 'home', group: t('palette.goTo'), label: t('nav.home'), icon: 'home', run: go('/') },
       { key: 'search', group: t('palette.goTo'), label: t('nav.search'), icon: 'search', hint: '/', run: go('/search') },
       { key: 'spaces', group: t('palette.goTo'), label: t('nav.allSpaces'), icon: 'grid', run: go('/spaces') },
-      ...(user.isAdmin ? [{ key: 'admin', group: t('palette.goTo'), label: t('nav.admin'), icon: 'settings' as const, run: go('/admin') }] : []),
+      ...(user.isAdmin ? [
+        { key: 'admin', group: t('palette.goTo'), label: t('nav.admin'), icon: 'settings' as const, run: go('/admin') },
+        { key: 'audit', group: t('palette.goTo'), label: t('admin.audit'), icon: 'clock' as const, run: go('/admin/audit') },
+      ] : []),
       { key: 'account', group: t('palette.goTo'), label: t('nav.account'), icon: 'user', run: go('/account') },
     ];
     const spaceItems: Item[] = (spaces.data ?? []).map((space) => ({
@@ -110,7 +113,8 @@ export function Palette({ onClose, canImport, onImport, onCreateSpace }: {
       render: () => <><SpaceIcon space={space} /><span>{space.name}</span></>,
     }));
     if (typed === '') {
-      const recentItems: Item[] = (recent.data ?? []).map((document) => ({
+      // Never an archived document here, even for who still sees it (decision 21 of the search).
+      const recentItems: Item[] = (recent.data ?? []).filter((document) => document.status !== 'ARCHIVED').map((document) => ({
         key: `recent-${document.id}`, group: t('palette.recent'), label: document.title, hint: document.space.name,
         run: go(`/documents/${document.id}`),
         render: () => <><Icon name="file-text" /><span className="palette-label"><bdi>{document.title}</bdi></span></>,

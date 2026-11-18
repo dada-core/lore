@@ -463,9 +463,6 @@ dialog.modal.modal-lg { width: min(720px, calc(100% - 32px)); }
 .grant > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grant .note { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
 .props .btn { margin: 8px 4px 0; }
-.version-card { padding: 0 4px; font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
-.version-card .help { overflow-wrap: anywhere; }
-.version-card .btn { align-self: flex-start; margin: 8px 0 0; }
 .fingerprint { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 .fingerprint code { font-size: 12px; color: var(--text-2); }
 .fingerprint .icon-btn { width: 24px; height: 24px; }
@@ -535,7 +532,7 @@ mark.found-mark { background: var(--mark); color: var(--mark-ink); border-radius
 
 .print-only { display: none; }
 @media print {
-  .sidebar, .view-header, .skip-link, .toast, .props, .callout, .parts-bar, .copy-code, .section-link, .doc-title-row .icon-btn, .add-description, .doc-description-row .link, .doc-note .link { display: none !important; }
+  .sidebar, .view-header, .skip-link, .toast, .props, .callout, .parts-bar, .activity, .copy-code, .section-link, .doc-title-row .icon-btn, .add-description, .doc-description-row .link, .doc-note .link { display: none !important; }
   .app, .doc-view, .doc-view.hide-props { display: block; }
   .doc-sub { display: none; }
   .doc-main { padding: 0; }
@@ -643,3 +640,57 @@ dialog.palette::backdrop { background: var(--scrim); animation: fade .12s ease-o
 }
 @media print { .side-search { display: none !important; } }
 .from-search { display: flex; margin-bottom: 4px; }
+
+/* Versions: the history in strata, thicker as the version changed more. */
+.strata { display: flex; flex-direction: column; margin: 2px 0 10px; }
+.stratum { display: grid; grid-template-columns: 64px 1fr; align-items: center; column-gap: 10px; border: 0; background: none; padding: 0 4px; cursor: pointer; text-align: left; width: 100%; border-radius: 5px; color: inherit; font: inherit; }
+.stratum:hover { background: var(--bg-hover); }
+.stratum:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.band { height: var(--h); background: var(--c); clip-path: var(--edge, polygon(0 12%, 25% 3%, 50% 10%, 75% 0, 100% 8%, 100% 100%, 0 100%)); }
+.stratum:nth-child(4n+1) .band { --edge: polygon(0 16%, 17% 5%, 39% 14%, 61% 0, 83% 10%, 100% 4%, 100% 100%, 0 100%); }
+.stratum:nth-child(4n+2) .band { --edge: polygon(0 10%, 24% 22%, 46% 6%, 70% 18%, 100% 8%, 100% 100%, 0 100%); }
+.stratum:nth-child(4n+3) .band { --edge: polygon(0 6%, 20% 14%, 44% 2%, 67% 12%, 88% 4%, 100% 10%, 100% 100%, 0 100%); }
+.stratum:nth-child(4n+4) .band { --edge: polygon(0 8%, 28% 2%, 53% 9%, 77% 1%, 100% 7%, 100% 100%, 0 100%); }
+.band.is-unknown { background: repeating-linear-gradient(135deg, var(--c) 0 4px, transparent 4px 8px); }
+.stratum-label { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--text-2); }
+.stratum[aria-pressed="true"] .stratum-label { color: var(--text); font-weight: 600; }
+.version-detail { font-size: 12.5px; padding: 8px 10px; border-radius: 8px; background: var(--bg-raised); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+.version-detail strong { font-size: 13px; }
+.version-detail p { color: var(--text-2); }
+.version-detail .actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.caption { font-size: 11.5px; color: var(--text-3); margin: 8px 4px 0; }
+
+/* The activity of a document, under its content; and of the home page. */
+.activity { margin-top: 36px; padding-top: 20px; border-top: 1px solid var(--border); }
+.activity ol { list-style: none; margin: 0; padding: 0; position: relative; }
+.activity ol::before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 6px; width: 1px; background: var(--border); }
+.activity li { position: relative; display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; font-size: 13px; color: var(--text-2); }
+.activity li .avatar { position: relative; z-index: 1; box-shadow: 0 0 0 3px var(--bg); }
+.activity li b { color: var(--text); font-weight: 500; }
+.activity time { color: var(--text-3); margin-left: 6px; }
+
+/* The library by status. */
+.board { display: flex; gap: 12px; padding: 16px 20px 40px; align-items: flex-start; width: max-content; min-width: 100%; }
+.column { flex: 0 0 290px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
+.column-head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 10px; font-size: 13px; font-weight: 600; }
+.column-head .count { color: var(--text-3); font-weight: 400; }
+.cards { display: flex; flex-direction: column; gap: 8px; }
+.card { display: block; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-decoration: none; color: inherit; box-shadow: var(--shadow-sm); }
+.card:hover { border-color: var(--border-strong); }
+.card-title { font-weight: 500; font-size: 13.5px; line-height: 1.4; }
+.card-pills { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--text-3); }
+.column-empty { font-size: 12.5px; color: var(--text-3); padding: 10px 6px; }
+.row-obsolete td { color: var(--text-3); }
+.replacement-pick { margin: 4px 0 4px 34px; }
+@media (max-width: 720px) {
+  .board { padding: 12px 16px 32px; }
+  .column { flex-basis: 260px; }
+  .replacement-pick { margin-left: 0; }
+}
+.radio-list { display: flex; flex-direction: column; gap: 8px; }
+.version-progress { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.version-progress > span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
+button.list-row { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; border-radius: 6px; }
+button.list-row:hover { background: var(--bg-hover); }
+.home-activity { margin-top: 0; padding-top: 0; border-top: 0; }

@@ -225,15 +225,19 @@ function Filters({ query, filters, page }: { query: string; filters: SearchFilte
     label: string,
     values: { value: string; count: number }[],
     name: (value: string) => string,
+    /** The values shown when none is chosen: archived documents only when asked. */
+    usual: (value: string) => boolean = () => true,
   ) => {
     const all = values.map((value) => value.value);
-    const kept = filters[key].length ? filters[key].filter((value) => all.includes(value)) : all;
+    const byDefault = all.filter(usual);
+    const kept = filters[key].length ? filters[key].filter((value) => all.includes(value)) : byDefault;
     const toggle = (value: string) => {
       const next = kept.includes(value) ? kept.filter((item) => item !== value) : [...kept, value];
       if (next.length === 0) return;
-      go({ ...filters, [key]: next.length === all.length ? [] : next });
+      const same = next.length === byDefault.length && byDefault.every((item) => next.includes(item));
+      go({ ...filters, [key]: same ? [] : next });
     };
-    const some = kept.length < all.length;
+    const some = kept.length !== byDefault.length || kept.some((value) => !byDefault.includes(value));
     return (
       <Menu
         key={key}
@@ -282,7 +286,8 @@ function Filters({ query, filters, page }: { query: string; filters: SearchFilte
         ))}
       </Menu>
       {chip('categories', t('search.facet.category'), facets.categories, (value) => categoryName(i18n, value))}
-      {chip('statuses', t('search.facet.status'), facets.statuses, (value) => t(`docStatus.${value as 'DRAFT'}`))}
+      {chip('statuses', t('search.facet.status'), facets.statuses, (value) => t(`docStatus.${value as 'DRAFT'}`),
+        (value) => value !== 'ARCHIVED')}
       {chip('formats', t('search.facet.format'), facets.formats, (value) => formatName(i18n, value))}
       <Menu
         triggerClassName={filters.updated ? 'chip-btn is-set' : 'chip-btn'}
@@ -395,6 +400,11 @@ function ResultItem({ query, result }: { query: string; result: SearchResult }) 
           <span>{t('document.version', { number: result.version })}</span>
           <span>{t('document.updated', { when: i18n.relative(document.updatedAt) })}</span>
           {document.restricted && <span className="status"><Icon name="lock" className="lock" />{t('library.restricted')}</span>}
+          {document.replacedBy && (
+            <span>
+              {t('search.replacedBy')} <Link to={`/documents/${document.replacedBy.id}`}><bdi>{document.replacedBy.title}</bdi></Link>
+            </span>
+          )}
         </div>
         {result.otherPassages.total > 0 && (
           <div className="more">

@@ -20,7 +20,10 @@ type Routes = Parameters<typeof fakeServer>[0];
 type View = ReturnType<typeof view>;
 
 const ID = 'd0000000-0000-7000-8000-000000000001';
-const readOnly = { edit: false, delete: false, manageAccess: false, retry: false, changeOwner: false };
+const readOnly = {
+  edit: false, delete: false, manageAccess: false, retry: false, changeOwner: false, newVersion: false, changeStatus: false,
+  archive: false,
+};
 
 /** The page of a document; returns the bodies sent to it, by method. */
 function server(document: View, routes: Routes = {}) {
@@ -34,6 +37,8 @@ function server(document: View, routes: Routes = {}) {
     'GET /api/v1/spaces': () => json([space()]),
     [`GET /api/v1/documents/${ID}`]: () => json(current),
     [`GET /api/v1/documents/${ID}/access`]: () => json({ restricted: false, spaceMembers: 4, people: [] }),
+    [`GET /api/v1/documents/${ID}/versions`]: () => json(page([current.currentVersion])),
+    [`GET /api/v1/documents/${ID}/activity`]: () => json({ items: [], next: null }),
     [`GET /api/v1/spaces/${SPACE_ID}/folders`]: () => json(folders),
     [`GET /api/v1/spaces/${SPACE_ID}/documents`]: () => json(page([])),
     [`GET /api/v1/spaces/${SPACE_ID}/documents/summary`]: () => json({ total: 0, inProgress: 0, scanned: 0, failed: 0, folders: [] }),

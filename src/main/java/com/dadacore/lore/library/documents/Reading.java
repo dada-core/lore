@@ -61,9 +61,11 @@ class Reading {
      * @param partCount the number of parts: a long document is shown part by part
      * @param truncated the rendering stops before the end of the document
      * @param outline   the titles of the whole document and the part of each; null when not asked
+     * @param anchor    the place shown: the anchor asked, or the section of the same title as in the
+     *                  version {@code fromVersion}; null when there is none
      */
     record RenderingView(int number, int renderer, int part, int partCount, boolean truncated,
-            @Nullable List<OutlineEntry> outline, String html) {
+            @Nullable List<OutlineEntry> outline, String html, @Nullable String anchor) {
     }
 
     /** @param level 1 to 6, as in the document */
@@ -72,11 +74,13 @@ class Reading {
 
     /**
      * A part of the rendering: the one asked, or the one that holds {@code anchor}, or the first.
+     * With {@code fromVersion}, {@code anchor} is a place of that version: the part shown holds the
+     * section of the same title in this one, if it has it (a link made for an older version).
      * {@code 409 extraction_pending} while the text is extracted; {@code 409 no_rendering} for a
      * PDF, a failure, or a version without rendering; field error {@code part:out_of_range}.
      */
     ResponseEntity<RenderingView> rendering(Viewer viewer, UUID id, int number, @Nullable Integer part,
-            @Nullable String anchor, boolean outline) {
+            @Nullable String anchor, @Nullable Integer fromVersion, boolean outline) {
         Documents.Opened opened = documents.open(viewer, id);
         DocumentRepository.Version version = version(opened, number);
         if ("PENDING".equals(version.extractionStatus())) {
@@ -87,23 +91,87 @@ class Reading {
         }
         DocumentRepository.RenderingRow rendering = repository.rendering(version.id())
                 .orElseThrow(() -> ApiException.conflict("no_rendering"));
-        int shown = part != null ? part : partOf(rendering, anchor);
+        String place = anchor == null ? null : place(anchor);
+        if (place != null && fromVersion != null && fromVersion != version.number()) {
+            place = sameSection(opened, fromVersion, place, rendering);
+        } else if (place != null && !hasPlace(rendering, place)) {
+            place = null;
+        }
+        int shown = part != null ? part : partOf(rendering, place);
         if (shown < 1 || shown > rendering.partCount()) {
             Checks.start().fail("part", "out_of_range", Map.of("min", 1, "max", rendering.partCount())).orThrow();
         }
         String html = repository.renderingPart(version.id(), shown).orElseThrow(() -> ApiException.conflict("no_rendering"));
         List<OutlineEntry> entries = !outline ? null : rendering.places().stream()
-                .filter(place -> place.title() != null && place.level() > 0)
-                .map(place -> new OutlineEntry(place.anchor(), place.level(), place.title(), place.part()))
+                .filter(entry -> entry.title() != null && entry.level() > 0)
+                .map(entry -> new OutlineEntry(entry.anchor(), entry.level(), entry.title(), entry.part()))
                 .toList();
         // Weak: Tomcat compresses the answer, as a strong one would forbid.
         String etag = "W/\"" + version.id() + "-" + rendering.renderer() + "-" + rendering.createdAt().toEpochMilli()
-                + "-" + shown + (outline ? "-o" : "") + "\"";
+                + "-" + shown + (outline ? "-o" : "") + (place == null ? "" : "-" + place) + "\"";
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noCache().cachePrivate())
                 .eTag(etag)
                 .body(new RenderingView(version.number(), rendering.renderer(), shown, rendering.partCount(),
-                        rendering.truncated(), entries, html));
+                        rendering.truncated(), entries, html, place));
+    }
+
+    /**
+     * The section of this rendering with the title the place has in another version, taken in the
+     * same rank among the sections of that title; null when the other version or the title is gone.
+     */
+    private @Nullable String sameSection(Documents.Opened opened, int fromVersion, String place,
+            DocumentRepository.RenderingRow rendering) {
+        DocumentRepository.Version other = repository.version(opened.row().id(), fromVersion).orElse(null);
+        DocumentRepository.RenderingRow before = other == null ? null : repository.rendering(other.id()).orElse(null);
+        if (before == null) {
+            return null;
+        }
+        String title = null;
+        int rank = 0;
+        for (Rendering.Place candidate : before.places()) {
+            if (candidate.title() == null) {
+                continue;
+            }
+            if (candidate.anchor().equals(place)) {
+                title = plain(candidate.title());
+                break;
+            }
+        }
+        if (title == null) {
+            return null;
+        }
+        for (Rendering.Place candidate : before.places()) {
+            if (candidate.anchor().equals(place)) {
+                break;
+            }
+            if (candidate.title() != null && plain(candidate.title()).equals(title)) {
+                rank++;
+            }
+        }
+        String wanted = title;
+        List<Rendering.Place> same = rendering.places().stream()
+                .filter(candidate -> candidate.title() != null && plain(candidate.title()).equals(wanted))
+                .toList();
+        if (same.isEmpty()) {
+            return null;
+        }
+        return same.get(Math.min(rank, same.size() - 1)).anchor();
+    }
+
+    private static boolean hasPlace(DocumentRepository.RenderingRow rendering, String place) {
+        return rendering.places().stream().anyMatch(candidate -> candidate.anchor().equals(place));
+    }
+
+    /** A title compared without its case nor its spaces. */
+    private static String plain(String title) {
+        return title.strip().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    /** The place of an anchor: {@code h-7} for {@code h-7-2}; null for an anchor of no place. */
+    private static @Nullable String place(String anchor) {
+        Matcher place = CHUNK_OF_PLACE.matcher(anchor.strip().toLowerCase(Locale.ROOT));
+        return place.matches() ? place.group(1) : null;
     }
 
     /**
@@ -181,17 +249,13 @@ class Reading {
         return repository.version(opened.row().id(), number).orElseThrow(ApiException::notFound);
     }
 
-    /** The part that holds an anchor; the first for none, or for an anchor the document does not have. */
-    private static int partOf(DocumentRepository.RenderingRow rendering, @Nullable String anchor) {
-        if (anchor == null) {
-            return 1;
-        }
-        Matcher place = CHUNK_OF_PLACE.matcher(anchor.strip().toLowerCase(Locale.ROOT));
-        if (!place.matches()) {
+    /** The part that holds a place; the first for none, or for a place the document does not have. */
+    private static int partOf(DocumentRepository.RenderingRow rendering, @Nullable String place) {
+        if (place == null) {
             return 1;
         }
         return rendering.places().stream()
-                .filter(candidate -> candidate.anchor().equals(place.group(1)))
+                .filter(candidate -> candidate.anchor().equals(place))
                 .mapToInt(Rendering.Place::part)
                 .findFirst()
                 .orElse(1);

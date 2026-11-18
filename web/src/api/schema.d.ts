@@ -107,6 +107,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The 8 latest imports, new versions and changes of status of the documents the person sees */
+        get: operations["recentActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The events of the organization, the latest first: category (view, download, import, status, change, deletion, rights, members, sign_in, organization, other), actor (an identifier, or system), from and to (instants), before (the cursor next of the previous page), size (50 by default, 200 at most) */
+        get: operations["page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The events of the same filters in CSV (text/csv, UTF-8, RFC 4180), written as they are read; the export is recorded. 429 export_running while the same person exports already */
+        get: operations["export"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/invitations": {
         parameters: {
             query?: never;
@@ -322,7 +373,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A document, its current version and what the person may do with it; its opening is recorded in the audit log once an hour */
+        /** A document, its current version and what the person may do with it; its opening is recorded in the audit log once an hour, with the version shown (version, an older one) */
         get: operations["get_1"];
         put?: never;
         post?: never;
@@ -352,6 +403,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What was done to a document, the latest first, without its views and downloads: before (the cursor next of the previous page), size (20 by default, 50 at most) */
+        get: operations["activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{id}/extraction/retry": {
         parameters: {
             query?: never;
@@ -361,7 +429,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Try the extraction again after a passing failure; 409 not_retryable otherwise */
+        /** Try the extraction of the latest version again after a passing failure; 409 not_retryable otherwise */
         post: operations["retry"];
         delete?: never;
         options?: never;
@@ -403,6 +471,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change the status of a document: Draft, Published, Obsolete (with replacedBy, a document the person reads) for contributors; Archived, and out of it, for the maintainers of the space */
+        put: operations["changeStatus"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The versions of a document, the latest first (50 by default, 200 at most) */
+        get: operations["versions"];
+        put?: never;
+        /** Import a new version of a document, which becomes current once its text is extracted; 409 same_content (the latest version has this file), 409 document_archived */
+        post: operations["newVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/versions/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A version of a document */
+        get: operations["version"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{id}/versions/{number}/file": {
         parameters: {
             query?: never;
@@ -427,7 +547,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A version laid out for reading (Markdown, Word, text), cleaned: the part asked (part), or the part that holds an anchor (anchor), or the first; the outline of the whole document unless outline=false. 409 extraction_pending, 409 no_rendering (a PDF, a failure) */
+        /** A version laid out for reading (Markdown, Word, text), cleaned: the part asked (part), or the part that holds an anchor (anchor), or the first; with fromVersion, anchor is a place of that version, found here by its title; the outline of the whole document unless outline=false. 409 extraction_pending, 409 no_rendering (a PDF, a failure) */
         get: operations["rendering"];
         put?: never;
         post?: never;
@@ -444,7 +564,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The documents the person imported that are still extracting or failed */
+        /** The versions the person imported that are still extracting or failed, first imports and new versions, as long as no later version became current */
         get: operations["attention"];
         put?: never;
         post?: never;
@@ -720,7 +840,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A page of the documents of a space the person can see, by folder then in the order asked: sort is updated (default, most recent first), title, category, status or size, direction asc or desc; folder=none lists those without a folder, ids (100 at most) follows given documents */
+        /** A page of the documents of a space the person can see, by folder then in the order asked: sort is updated (default, most recent first), title, category, status or size, direction asc or desc; folder=none lists those without a folder, ids (100 at most) follows given documents, status (several) the documents of these statuses; without status, the archived ones are left out */
         get: operations["list_3"];
         put?: never;
         /** Import a file into a space: a new document and its version 1, whose text is extracted next; duplicateOf names a document of the space with the same content */
@@ -867,6 +987,26 @@ export interface components {
             passwordMinLength: number;
             role: string;
         };
+        ActivityActor: {
+            displayName?: string | null;
+            /** Format: uuid */
+            id: string;
+        };
+        ActivityItem: {
+            action: string;
+            actor?: components["schemas"]["ActivityActor"] | null;
+            details: {
+                [key: string]: unknown;
+            };
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        ActivityPage: {
+            items: components["schemas"]["ActivityItem"][];
+            next?: string | null;
+        };
         AttentionItem: {
             extractionError?: string | null;
             extractionStatus: string;
@@ -874,6 +1014,36 @@ export interface components {
             id: string;
             space: components["schemas"]["SpaceLink"];
             title: string;
+            /** Format: int32 */
+            version: number;
+        };
+        AuditActor: {
+            displayName?: string | null;
+            email?: string | null;
+            /** Format: uuid */
+            id: string;
+        };
+        AuditItem: {
+            action: string;
+            actor?: components["schemas"]["AuditActor"] | null;
+            category: string;
+            details: {
+                [key: string]: unknown;
+            };
+            /** Format: int64 */
+            id: number;
+            ip?: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            resource?: components["schemas"]["AuditResource"] | null;
+        };
+        AuditPage: {
+            items: components["schemas"]["AuditItem"][];
+            next?: string | null;
+        };
+        AuditResource: {
+            id: string;
+            type: string;
         };
         Candidate: {
             displayName: string;
@@ -903,10 +1073,13 @@ export interface components {
             role: string;
         };
         DocumentActions: {
+            archive: boolean;
             changeOwner: boolean;
+            changeStatus: boolean;
             delete: boolean;
             edit: boolean;
             manageAccess: boolean;
+            newVersion: boolean;
             retry: boolean;
         };
         DocumentChanges: {
@@ -926,6 +1099,7 @@ export interface components {
             id: string;
             language?: string | null;
             mediaType: string;
+            newerVersion?: components["schemas"]["NewerVersion"] | null;
             owner?: components["schemas"]["PersonLink"] | null;
             /** Format: int32 */
             pageCount?: number | null;
@@ -950,7 +1124,14 @@ export interface components {
             /** Format: uuid */
             folderId?: string | null;
         };
+        DocumentRef: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+        };
         DocumentSummary: {
+            /** Format: int64 */
+            archived: number;
             /** Format: int64 */
             failed: number;
             folders: components["schemas"]["FolderDocuments"][];
@@ -972,13 +1153,19 @@ export interface components {
             folder?: components["schemas"]["FolderLink"] | null;
             /** Format: uuid */
             id: string;
+            newerVersion?: components["schemas"]["NewerVersion"] | null;
             owner?: components["schemas"]["PersonLink"] | null;
+            replacedBy?: components["schemas"]["DocumentLink"] | null;
             restricted: boolean;
             space: components["schemas"]["SpaceLink"];
             status: string;
+            /** Format: date-time */
+            statusChangedAt: string;
             title: string;
             /** Format: date-time */
             updatedAt: string;
+            /** Format: int32 */
+            versionCount: number;
         };
         EmailChange: {
             currentPassword: string;
@@ -1025,6 +1212,19 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+        };
+        HomeItem: {
+            action: string;
+            actor?: components["schemas"]["ActivityActor"] | null;
+            details: {
+                [key: string]: unknown;
+            };
+            document: components["schemas"]["DocumentLink"];
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            occurredAt: string;
+            space: components["schemas"]["SpaceLink"];
         };
         ImportForm: {
             category?: string | null;
@@ -1116,6 +1316,15 @@ export interface components {
             name: string;
             slug?: string | null;
         };
+        NewerVersion: {
+            author?: components["schemas"]["PersonLink"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            extractionError?: string | null;
+            extractionStatus: string;
+            /** Format: int32 */
+            number: number;
+        };
         OpenSession: {
             browser?: string | null;
             current: boolean;
@@ -1167,6 +1376,15 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        PageResponseVersionView: {
+            items: components["schemas"]["VersionView"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            size: number;
+            /** Format: int64 */
+            total: number;
+        };
         PassageRef: {
             anchor: string;
             headings: string[];
@@ -1205,6 +1423,7 @@ export interface components {
             viewedAt: string;
         };
         RenderingView: {
+            anchor?: string | null;
             html: string;
             /** Format: int32 */
             number: number;
@@ -1244,6 +1463,7 @@ export interface components {
             id: string;
             language?: string | null;
             mediaType: string;
+            replacedBy?: components["schemas"]["DocumentRef"] | null;
             restricted: boolean;
             space: components["schemas"]["Place"];
             status: string;
@@ -1389,6 +1609,11 @@ export interface components {
             role: string;
             slug: string;
         };
+        StatusChange: {
+            /** Format: uuid */
+            replacedBy?: string | null;
+            status?: string | null;
+        };
         StorageChange: {
             /** Format: int32 */
             maxUploadMegabytes?: number | null;
@@ -1434,8 +1659,16 @@ export interface components {
         VerifyCodeRequest: {
             setupCode: string;
         };
+        VersionForm: {
+            /** Format: binary */
+            file: string;
+            note?: string | null;
+            status?: string | null;
+        };
         VersionView: {
             author?: components["schemas"]["PersonLink"] | null;
+            /** Format: float */
+            changeRatio?: number | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1448,6 +1681,7 @@ export interface components {
             id: string;
             language?: string | null;
             mediaType: string;
+            note?: string | null;
             /** Format: int32 */
             number: number;
             /** Format: int32 */
@@ -1617,6 +1851,76 @@ export interface operations {
         responses: {
             /** @description No Content */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    recentActivity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomeItem"][];
+                };
+            };
+        };
+    };
+    page: {
+        parameters: {
+            query?: {
+                category?: string | null;
+                actor?: string | null;
+                from?: string | null;
+                to?: string | null;
+                before?: string | null;
+                size?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditPage"];
+                };
+            };
+        };
+    };
+    export: {
+        parameters: {
+            query?: {
+                category?: string | null;
+                actor?: string | null;
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1978,7 +2282,9 @@ export interface operations {
     };
     get_1: {
         parameters: {
-            query?: never;
+            query?: {
+                version?: number | null;
+            };
             header?: never;
             path: {
                 id: string;
@@ -2092,6 +2398,31 @@ export interface operations {
             };
         };
     };
+    activity: {
+        parameters: {
+            query?: {
+                before?: string | null;
+                size?: number | null;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityPage"];
+                };
+            };
+        };
+    };
     retry: {
         parameters: {
             query?: never;
@@ -2166,6 +2497,106 @@ export interface operations {
             };
         };
     };
+    changeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatusChange"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentView"];
+                };
+            };
+        };
+    };
+    versions: {
+        parameters: {
+            query?: {
+                page?: number | null;
+                size?: number | null;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponseVersionView"];
+                };
+            };
+        };
+    };
+    newVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["VersionForm"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentView"];
+                };
+            };
+        };
+    };
+    version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionView"];
+                };
+            };
+        };
+    };
     file: {
         parameters: {
             query?: {
@@ -2194,6 +2625,7 @@ export interface operations {
             query?: {
                 part?: number | null;
                 anchor?: string | null;
+                fromVersion?: number | null;
                 outline?: boolean;
             };
             header?: never;
@@ -2677,6 +3109,7 @@ export interface operations {
                 folder?: string | null;
                 restricted?: boolean | null;
                 ids?: string[] | null;
+                status?: string[] | null;
                 sort?: string | null;
                 direction?: string | null;
                 page?: number | null;

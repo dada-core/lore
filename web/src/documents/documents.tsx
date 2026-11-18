@@ -27,7 +27,17 @@ const CATEGORY_PILLS: Record<Category, string> = {
 
 /** The statuses a document can be imported with; the others come with the versions. */
 export const IMPORT_STATUSES = ['DRAFT', 'PUBLISHED'] as const;
-type DocumentStatus = 'DRAFT' | 'PUBLISHED' | 'OBSOLETE' | 'ARCHIVED';
+/** The statuses of a document, in the order of a board. */
+export const STATUSES = ['DRAFT', 'PUBLISHED', 'OBSOLETE', 'ARCHIVED'] as const;
+export type DocumentStatus = (typeof STATUSES)[number];
+export type Version = Schemas['VersionView'];
+
+/** The status asked with a new version, as read in its window: none keeps the status. */
+export function versionStatus(current: string, checked: boolean): string | null {
+  if (current === 'PUBLISHED') return checked ? 'PUBLISHED' : 'DRAFT';
+  if (current === 'OBSOLETE') return checked ? 'PUBLISHED' : null;
+  return null;
+}
 type ExtractionStatus = 'PENDING' | 'INDEXED' | 'SCANNED' | 'FAILED';
 
 /** Causes of a failed extraction that may pass: Lore tries again, then offers "Retry". Same list as ExtractionResults.PASSING_FAILURES on the server, checked by PassingFailuresTests. */

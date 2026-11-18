@@ -33,7 +33,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * The documents of the spaces. A document the person cannot see answers {@code 404}; an action
  * their role does not allow, {@code 403}; an archived space refuses any change,
- * {@code 409 space_archived}.
+ * {@code 409 space_archived}; an archived document any change but its status and its deletion,
+ * {@code 409 document_archived}.
  */
 @RestController
 @Tag(name = "Documents")
@@ -43,12 +44,15 @@ class DocumentsController {
     private final Imports imports;
     private final StorageSettings storage;
     private final Reading reading;
+    private final DocumentActivity activity;
 
-    DocumentsController(Documents documents, Imports imports, StorageSettings storage, Reading reading) {
+    DocumentsController(Documents documents, Imports imports, StorageSettings storage, Reading reading,
+            DocumentActivity activity) {
         this.documents = documents;
         this.imports = imports;
         this.storage = storage;
         this.reading = reading;
+        this.activity = activity;
     }
 
     /**
@@ -63,19 +67,31 @@ class DocumentsController {
             @Nullable String status, @Nullable String category, @Nullable Boolean restricted, @Nullable List<UUID> userIds) {
     }
 
+    /**
+     * @param file   the file of the new version: PDF, Word (.docx), Markdown or text
+     * @param note   what changes, 500 characters at most
+     * @param status {@code DRAFT} or {@code PUBLISHED}: the status the document takes when the version
+     *               becomes current; none: unchanged
+     */
+    record VersionForm(@Schema(type = "string", format = "binary") String file, @Nullable String note,
+            @Nullable String status) {
+    }
+
     @GetMapping("/api/v1/spaces/{spaceId}/documents")
     @Operation(summary = "A page of the documents of a space the person can see, by folder then in the order asked: "
             + "sort is updated (default, most recent first), title, category, status or size, direction asc or desc; "
-            + "folder=none lists those without a folder, ids (100 at most) follows given documents")
+            + "folder=none lists those without a folder, ids (100 at most) follows given documents, status (several) "
+            + "the documents of these statuses; without status, the archived ones are left out")
     PageResponse<DocumentItem> list(Viewer viewer, @PathVariable UUID spaceId,
             @RequestParam(required = false) @Nullable String folder,
             @RequestParam(required = false) @Nullable Boolean restricted,
             @RequestParam(required = false) @Nullable List<UUID> ids,
+            @RequestParam(required = false) @Nullable List<String> status,
             @RequestParam(required = false) @Nullable String sort,
             @RequestParam(required = false) @Nullable String direction,
             @RequestParam(required = false) @Nullable Integer page,
             @RequestParam(required = false) @Nullable Integer size) {
-        return documents.list(viewer, spaceId, folder, restricted, ids, sort, direction, PageQuery.of(page, size));
+        return documents.list(viewer, spaceId, folder, restricted, ids, status, sort, direction, PageQuery.of(page, size));
     }
 
     @GetMapping("/api/v1/spaces/{spaceId}/documents/summary")
@@ -96,9 +112,55 @@ class DocumentsController {
 
     @GetMapping("/api/v1/documents/{id}")
     @Operation(summary = "A document, its current version and what the person may do with it; "
-            + "its opening is recorded in the audit log once an hour")
-    DocumentView get(Viewer viewer, @PathVariable UUID id) {
-        return documents.get(viewer, id);
+            + "its opening is recorded in the audit log once an hour, with the version shown (version, an older one)")
+    DocumentView get(Viewer viewer, @PathVariable UUID id, @RequestParam(required = false) @Nullable Integer version) {
+        return documents.get(viewer, id, version);
+    }
+
+    @PostMapping(path = "/api/v1/documents/{id}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Import a new version of a document, which becomes current once its text is extracted; "
+            + "409 same_content (the latest version has this file), 409 document_archived",
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+                    mediaType = MediaType.MULTIPART_FORM_DATA_VALUE, schema = @Schema(implementation = VersionForm.class))))
+    DocumentView newVersion(Viewer viewer, @PathVariable UUID id, HttpServletRequest request) {
+        return imports.newVersion(viewer, id, request);
+    }
+
+    @GetMapping("/api/v1/documents/{id}/versions")
+    @Operation(summary = "The versions of a document, the latest first (50 by default, 200 at most)")
+    PageResponse<DocumentViews.VersionView> versions(Viewer viewer, @PathVariable UUID id,
+            @RequestParam(required = false) @Nullable Integer page,
+            @RequestParam(required = false) @Nullable Integer size) {
+        return documents.versions(viewer, id, PageQuery.of(page, size));
+    }
+
+    @GetMapping("/api/v1/documents/{id}/versions/{number}")
+    @Operation(summary = "A version of a document")
+    DocumentViews.VersionView version(Viewer viewer, @PathVariable UUID id, @PathVariable int number) {
+        return documents.version(viewer, id, number);
+    }
+
+    @PutMapping("/api/v1/documents/{id}/status")
+    @Operation(summary = "Change the status of a document: Draft, Published, Obsolete (with replacedBy, a document "
+            + "the person reads) for contributors; Archived, and out of it, for the maintainers of the space")
+    DocumentView changeStatus(Viewer viewer, @PathVariable UUID id, @RequestBody Documents.StatusChange body) {
+        return documents.changeStatus(viewer, id, body);
+    }
+
+    @GetMapping("/api/v1/documents/{id}/activity")
+    @Operation(summary = "What was done to a document, the latest first, without its views and downloads: "
+            + "before (the cursor next of the previous page), size (20 by default, 50 at most)")
+    DocumentActivity.ActivityPage activity(Viewer viewer, @PathVariable UUID id,
+            @RequestParam(required = false) @Nullable String before,
+            @RequestParam(required = false) @Nullable Integer size) {
+        return activity.document(viewer, id, before, size);
+    }
+
+    @GetMapping("/api/v1/activity")
+    @Operation(summary = "The 8 latest imports, new versions and changes of status of the documents the person sees")
+    List<DocumentActivity.HomeItem> recentActivity(Viewer viewer) {
+        return activity.home(viewer);
     }
 
     @GetMapping("/api/v1/documents/recent")
@@ -109,13 +171,15 @@ class DocumentsController {
 
     @GetMapping("/api/v1/documents/{id}/versions/{number}/rendering")
     @Operation(summary = "A version laid out for reading (Markdown, Word, text), cleaned: the part asked (part), "
-            + "or the part that holds an anchor (anchor), or the first; the outline of the whole document unless "
+            + "or the part that holds an anchor (anchor), or the first; with fromVersion, anchor is a place of that "
+            + "version, found here by its title; the outline of the whole document unless "
             + "outline=false. 409 extraction_pending, 409 no_rendering (a PDF, a failure)")
     ResponseEntity<Reading.RenderingView> rendering(Viewer viewer, @PathVariable UUID id, @PathVariable int number,
             @RequestParam(required = false) @Nullable Integer part,
             @RequestParam(required = false) @Nullable String anchor,
+            @RequestParam(required = false) @Nullable Integer fromVersion,
             @RequestParam(required = false, defaultValue = "true") boolean outline) {
-        return reading.rendering(viewer, id, number, part, anchor, outline);
+        return reading.rendering(viewer, id, number, part, anchor, fromVersion, outline);
     }
 
     @GetMapping("/api/v1/documents/{id}/versions/{number}/file")
@@ -154,7 +218,7 @@ class DocumentsController {
     }
 
     @PostMapping("/api/v1/documents/{id}/extraction/retry")
-    @Operation(summary = "Try the extraction again after a passing failure; 409 not_retryable otherwise")
+    @Operation(summary = "Try the extraction of the latest version again after a passing failure; 409 not_retryable otherwise")
     DocumentView retry(Viewer viewer, @PathVariable UUID id) {
         return documents.retry(viewer, id);
     }
@@ -178,7 +242,8 @@ class DocumentsController {
     }
 
     @GetMapping("/api/v1/imports/attention")
-    @Operation(summary = "The documents the person imported that are still extracting or failed")
+    @Operation(summary = "The versions the person imported that are still extracting or failed, first imports and "
+            + "new versions, as long as no later version became current")
     List<Documents.AttentionItem> attention(Viewer viewer) {
         return documents.attention(viewer);
     }

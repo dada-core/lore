@@ -93,6 +93,41 @@ class MigrationTests extends ApiTest {
                 .query(Boolean.class).single()).isFalse();
     }
 
+    @Test
+    void v8DatesEachStatusFromTheCreationOfItsDocumentAndChangesNothingElse() {
+        migrate("7");
+        JdbcClient sql = JdbcClient.create(dataSource);
+        UUID organization = sql.sql("insert into " + SCHEMA + ".organization (name, slug) values ('DadaGroup', 'dadagroup') returning id")
+                .query(UUID.class).single();
+        UUID space = sql.sql("insert into " + SCHEMA + ".space (organization_id, name, slug, color) values (?, 'Infrastructure',"
+                + " 'infrastructure', '#13705E') returning id").param(organization).query(UUID.class).single();
+        UUID indexed = version(sql, space, "text/markdown", "INDEXED", null);
+        sql.sql("update " + SCHEMA + ".document set created_at = '2026-09-02T08:00:00Z', status = 'OBSOLETE'"
+                + " where current_version_id = ?").param(indexed).update();
+        UUID failed = version(sql, space, "text/plain", "FAILED", "corrupt");
+        String before = sql.sql("select string_agg(id::text || title || status, ',' order by id) from " + SCHEMA + ".document")
+                .query(String.class).single();
+
+        migrate("8");
+
+        assertThat(sql.sql("select status_changed_at = created_at from " + SCHEMA + ".document where current_version_id = ?")
+                .param(indexed).query(Boolean.class).single()).isTrue();
+        assertThat(sql.sql("select replaced_by_id from " + SCHEMA + ".document where current_version_id = ?").param(indexed)
+                .query(UUID.class).optional()).isEmpty();
+        // The first versions changed all of their document; a failure, nobody knows.
+        assertThat(sql.sql("select change_ratio from " + SCHEMA + ".document_version where id = ?").param(indexed)
+                .query(Float.class).single()).isEqualTo(1f);
+        assertThat(sql.sql("select change_ratio from " + SCHEMA + ".document_version where id = ?").param(failed)
+                .query(Float.class).optional()).isEmpty();
+        assertThat(sql.sql("select string_agg(id::text || title || status, ',' order by id) from " + SCHEMA + ".document")
+                .query(String.class).single()).isEqualTo(before);
+        // A replacement belongs to obsolete documents only.
+        UUID other = sql.sql("select id from " + SCHEMA + ".document where current_version_id = ?").param(failed)
+                .query(UUID.class).single();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> sql.sql("update " + SCHEMA + ".document set replaced_by_id = id"
+                + " where id = ?").param(other).update()).hasMessageContaining("document_replaced_by_check");
+    }
+
     private void migrate(String target) {
         Flyway.configure()
                 .dataSource(dataSource)

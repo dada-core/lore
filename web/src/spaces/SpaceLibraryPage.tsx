@@ -27,6 +27,7 @@ import { Menu, MenuItem, MenuSeparator } from '../ui/Menu';
 import { Modal } from '../ui/Modal';
 import { LIBRARY_COLUMNS, LIBRARY_SORTS, useLibraryView, type LibraryColumn } from '../ui/preferences';
 import { useNotify } from '../ui/Toast';
+import { LibraryBoard } from './LibraryBoard';
 import { canContribute, canManage, refreshSpaces, SpaceIcon, useSpace, type Space } from './spaces';
 import { spaceCrumbs } from './SpaceRoute';
 
@@ -44,8 +45,10 @@ const ROOT = 'none';
 
 /**
  * The library of a space: its documents in a grid, grouped by folder, the root of the space
- * included; a filter by folder, with the counts. Folders are renamed and deleted from the head of
- * their group. While a text is being extracted, the grid asks again every ten seconds.
+ * included; a filter by folder, with the counts; or a board by status ({@code ?view=kanban}).
+ * Folders are renamed and deleted from the head of their group. Archived documents are left out
+ * of the grid, but for who sees them and asks ({@code ?status=ARCHIVED}). While a text is being
+ * extracted, the grid asks again every ten seconds.
  */
 export function SpaceLibraryPage() {
   const i18n = useI18n();
@@ -58,6 +61,8 @@ export function SpaceLibraryPage() {
   const [folded, setFolded] = useState<Set<string>>(() => new Set());
   const contributor = canContribute(space);
   const filter = params.get('folder');
+  const board = params.get('view') === 'kanban';
+  const onlyArchived = !board && params.get('status') === 'ARCHIVED';
   const [view, setView] = useLibraryView();
   const direction = view.direction ?? (view.sort === 'updated' ? 'desc' : 'asc');
   const hidden = new Set<LibraryColumn>(view.hidden);
@@ -74,18 +79,29 @@ export function SpaceLibraryPage() {
     refetchInterval: whileExtracting((data) => data.inProgress > 0),
   });
   const documents = useInfiniteQuery({
-    queryKey: [...keys.documents(space.id, filter ?? 'all'), view.sort, direction],
+    queryKey: [...keys.documents(space.id, filter ?? 'all'), view.sort, direction, onlyArchived],
     queryFn: ({ pageParam }) => call(() => api.GET('/api/v1/spaces/{spaceId}/documents', {
       params: {
         path: { spaceId: space.id },
-        query: { folder: filter ?? undefined, sort: view.sort, direction, page: pageParam, size: PAGE },
+        query: {
+          folder: filter ?? undefined,
+          status: onlyArchived ? ['ARCHIVED'] : undefined,
+          sort: view.sort,
+          direction,
+          page: pageParam,
+          size: PAGE,
+        },
       },
     })),
+    enabled: !board,
     initialPageParam: 0,
-    // Another folder shown: the grid stays in place until it arrives, never with another space's documents.
-    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === space.id ? previous : undefined),
+    // Another folder shown: the grid stays in place until it arrives, never with another space's documents,
+    // nor the archived ones under the title of the others.
+    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === space.id
+      && previousQuery.queryKey.at(-1) === onlyArchived ? previous : undefined),
     getNextPageParam: (last) => ((last.page + 1) * last.size < last.total ? last.page + 1 : undefined),
-    refetchInterval: whileExtracting((data) => data.pages.some((page) => page.items.some((item) => item.extractionStatus === 'PENDING'))),
+    refetchInterval: whileExtracting((data) => data.pages.some((page) => page.items.some((item) => item.extractionStatus === 'PENDING'
+      || item.newerVersion?.extractionStatus === 'PENDING'))),
   });
 
   const remove = useMutation({
@@ -109,8 +125,18 @@ export function SpaceLibraryPage() {
   const total = documents.data?.pages[0]?.total ?? 0;
   const counts = new Map((summary.data?.folders ?? []).map((entry) => [entry.folderId ?? ROOT, entry.count]));
   const filtered = filter === ROOT ? null : folderList.find((folder) => folder.id === filter);
-  const empty = !filter && folders.isSuccess && summary.isSuccess && folderList.length === 0 && summary.data.total === 0;
-  const loading = folders.isPending || summary.isPending || documents.isPending;
+  const empty = !filter && !onlyArchived && folders.isSuccess && summary.isSuccess && folderList.length === 0
+    && summary.data.total === 0 && (summary.data.archived ?? 0) === 0;
+  const loading = folders.isPending || summary.isPending || (!board && documents.isPending);
+  const archivedCount = summary.data?.archived ?? 0;
+  // The address of a view, the folder kept.
+  const viewAddress = (kanban: boolean) => {
+    const next = new URLSearchParams();
+    if (filter) next.set('folder', filter);
+    if (kanban) next.set('view', 'kanban');
+    const query = next.toString();
+    return `/spaces/${space.slug}${query ? `?${query}` : ''}`;
+  };
   const error = folders.error ?? summary.error ?? documents.error;
 
   const askDelete = (folder: Folder) => {
@@ -124,7 +150,12 @@ export function SpaceLibraryPage() {
     else next.add(key);
     return next;
   });
-  const showFolder = (value: string | null) => setParams(value ? { folder: value } : {});
+  const showFolder = (value: string | null) => {
+    const next: Record<string, string> = value ? { folder: value } : {};
+    if (board) next.view = 'kanban';
+    if (onlyArchived) next.status = 'ARCHIVED';
+    setParams(next);
+  };
 
   // The groups shown: the root of the space when it holds documents, then every folder, by name.
   const groups: { key: string; folder: Folder | null; documents: DocumentItem[] }[] = [];
@@ -151,9 +182,9 @@ export function SpaceLibraryPage() {
   ) : undefined;
 
   // The foot of the grid: counts of the whole space, or of the folder shown.
-  const shown = filter ? items : null;
+  const shown = filter || onlyArchived ? items : null;
   const foot = {
-    total: filter ? total : summary.data?.total ?? 0,
+    total: filter || onlyArchived ? total : summary.data?.total ?? 0,
     inProgress: shown ? shown.filter((item) => item.extractionStatus === 'PENDING').length : summary.data?.inProgress ?? 0,
     scanned: shown ? shown.filter((item) => item.extractionStatus === 'SCANNED').length : summary.data?.scanned ?? 0,
     failed: shown ? shown.filter((item) => item.extractionStatus === 'FAILED').length : summary.data?.failed ?? 0,
@@ -201,6 +232,20 @@ export function SpaceLibraryPage() {
               {space.description && <p className="page-intro">{space.description}</p>}
             </div>
             <div>
+              <nav className="lib-tools" aria-label={t('library.views')} style={{ marginBottom: 6 }}>
+                <Link className="view-tab" to={viewAddress(false)} aria-current={!board ? 'page' : undefined}>
+                  <Icon name="grid" />{t('library.view.grid')}
+                </Link>
+                <Link className="view-tab" to={viewAddress(true)} aria-current={board ? 'page' : undefined}>
+                  <Icon name="columns" />{t('library.view.kanban')}
+                </Link>
+              </nav>
+              {onlyArchived && (
+                <div className="row-between" style={{ marginBottom: 10 }}>
+                  <h2 className="section-title">{t('library.archivedTitle')}</h2>
+                  <Link className="link" to={viewAddress(false)}>{t('library.allDocuments')}</Link>
+                </div>
+              )}
               <div className="lib-tools" style={{ marginBottom: 10 }}>
                 <Menu
                   triggerClassName={filter ? 'tool is-on-blue' : 'tool'}
@@ -227,6 +272,7 @@ export function SpaceLibraryPage() {
                     </MenuItem>
                   ))}
                 </Menu>
+                {!board && (<>
                 <Menu
                   triggerClassName={view.sort !== 'updated' || view.direction ? 'tool is-on-blue' : 'tool'}
                   label={t('library.sortBy', { field: t(`library.sort.${view.sort}`) })}
@@ -256,7 +302,10 @@ export function SpaceLibraryPage() {
                     </MenuItem>
                   ))}
                 </Menu>
+                </>)}
               </div>
+              {board && <LibraryBoard space={space} folder={filter} archived={canManage(space)} />}
+              {!board && (
               <div className="set-box is-flush" style={{ marginTop: 0 }}>
                 <HorizontalScroll stickyFirstColumn>
                   <table className="grid" style={{ minWidth: 400 + 95 * (columns - 2) }}>
@@ -300,7 +349,7 @@ export function SpaceLibraryPage() {
                               </td>
                             </tr>
                             {open && group.documents.map((item) => (
-                              <DocumentRow key={item.id} item={item} number={numbers.get(item.id) ?? 0} hidden={hidden} />
+                              <DocumentRow key={item.id} item={item} number={numbers.get(item.id) ?? 0} hidden={hidden} contributor={contributor} />
                             ))}
                             {open && group.documents.length === 0 && !documents.hasNextPage && (
                               <tr><td className="cell-note" colSpan={columns}>{t('library.emptyFolder')}</td></tr>
@@ -317,6 +366,9 @@ export function SpaceLibraryPage() {
                   {foot.inProgress > 0 && <span>{i18n.tp('library.inProgress', foot.inProgress)}</span>}
                   {foot.scanned > 0 && <span>{i18n.tp('library.scanned', foot.scanned)}</span>}
                   {foot.failed > 0 && <span>{i18n.tp('library.failed', foot.failed)}</span>}
+                  {!onlyArchived && archivedCount > 0 && (
+                    <Link className="link" to={`/spaces/${space.slug}?status=ARCHIVED`}>{i18n.tp('library.archived', archivedCount)}</Link>
+                  )}
                   {documents.hasNextPage && (
                     <span className="pager">
                       <button type="button" className="btn" disabled={documents.isFetchingNextPage} onClick={() => void documents.fetchNextPage()}>
@@ -327,6 +379,7 @@ export function SpaceLibraryPage() {
                   )}
                 </div>
               </div>
+              )}
             </div>
           </div>
         )}
@@ -370,11 +423,18 @@ function FolderMenu({ folder, onRename, onDelete }: { folder: Folder; onRename: 
 }
 
 /** A line of the grid: the title with the icon of its format and a lock when restricted. */
-function DocumentRow({ item, number, hidden }: { item: DocumentItem; number: number; hidden: Set<LibraryColumn> }) {
+function DocumentRow({ item, number, hidden, contributor }: {
+  item: DocumentItem;
+  number: number;
+  hidden: Set<LibraryColumn>;
+  /** A failed new version is told to who may import another. */
+  contributor: boolean;
+}) {
   const i18n = useI18n();
   const { t } = i18n;
+  const newer = item.newerVersion?.extractionStatus === 'FAILED' && !contributor ? null : item.newerVersion;
   return (
-    <tr>
+    <tr className={item.status === 'OBSOLETE' ? 'row-obsolete' : undefined}>
       <td className="rn">{number}</td>
       <td className="primary">
         <div className="cell-title">
@@ -382,6 +442,11 @@ function DocumentRow({ item, number, hidden }: { item: DocumentItem; number: num
           <Link to={`/documents/${item.id}`}>{item.title}</Link>
           {item.restricted && (
             <span role="img" aria-label={t('library.restricted')} title={t('library.restricted')}><Icon name="lock" className="lock" /></span>
+          )}
+          {newer && (
+            <span className="help">
+              {t(newer.extractionStatus === 'FAILED' ? 'version.inFailure' : 'version.inProgress', { number: newer.number })}
+            </span>
           )}
         </div>
       </td>

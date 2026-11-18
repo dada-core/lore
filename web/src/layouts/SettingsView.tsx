@@ -7,7 +7,7 @@ import { Icon, type IconName } from '../ui/Icon';
 import { usePanel } from '../ui/preferences';
 import { View } from './AppShell';
 
-type Section = 'account' | 'general' | 'members' | 'security' | 'storage';
+type Section = 'account' | 'general' | 'members' | 'security' | 'storage' | 'audit';
 
 /** My account and Administration: the settings menu on the left, the page on the right. */
 export function SettingsView({ section, title, intro, wide, actions, children }: {
@@ -58,6 +58,7 @@ export function SettingsView({ section, title, intro, wide, actions, children }:
               {link('/admin/members', 'users', t('admin.members'))}
               {link('/admin/security', 'shield', t('admin.security'))}
               {link('/admin/storage', 'database', t('admin.storage'))}
+              {link('/admin/audit', 'clock', t('admin.audit'))}
             </>
           )}
         </nav>

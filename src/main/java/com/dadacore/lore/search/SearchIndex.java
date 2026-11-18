@@ -56,11 +56,16 @@ public interface SearchIndex {
      * @param passage        the best passage, for a match in the text
      * @param description    the description, marked, for a match in the description
      * @param otherPassages  the other passages found, in the order of the document
+     * @param replacedBy     for an obsolete document, the one that replaces it, when the person may read it
      */
     record FoundDocument(UUID id, String markedTitle, String status, @Nullable String category, String mediaType,
             @Nullable String language, boolean restricted, String extractionStatus, Instant updatedAt, Place space,
             @Nullable Folder folder, int version, String match, @Nullable FoundPassage passage,
-            @Nullable String description, int otherPassageCount, List<PassageRef> otherPassages) {
+            @Nullable String description, int otherPassageCount, List<PassageRef> otherPassages,
+            @Nullable DocumentRef replacedBy) {
+    }
+
+    record DocumentRef(UUID id, String title) {
     }
 
     record FoundPassage(String anchor, @Nullable Integer page, List<String> headings, String markedExcerpt) {

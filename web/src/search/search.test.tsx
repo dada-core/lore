@@ -127,6 +127,30 @@ describe('the search page', () => {
     expect(await screen.findByRole('button', { name: /^Catégorie\s: 1 sur 2/ })).toBeInTheDocument();
   });
 
+  it('names the document that replaces an obsolete one, and leaves the archived ones unchecked until asked', async () => {
+    const { asked } = server({
+      'GET /api/v1/search': (request) => {
+        asked.push(new URL(request.url));
+        return json({
+          items: [result(ID, 'Sauvegardes Barman', {
+            document: { ...result(ID, 'Sauvegardes Barman').document, status: 'OBSOLETE', replacedBy: { id: OTHER, title: 'Restaurer une base' } },
+          })],
+          page: 0, size: 20, total: 1,
+          facets: { ...FACETS, statuses: [{ value: 'OBSOLETE', count: 1 }, { value: 'ARCHIVED', count: 2 }] },
+        });
+      },
+    });
+    const router = open('/search?q=barman');
+    const browser = userEvent.setup();
+
+    const found = await screen.findByRole('article', { name: 'Sauvegardes Barman' });
+    expect(within(found).getByRole('link', { name: 'Restaurer une base' })).toHaveAttribute('href', `/documents/${OTHER}`);
+    await browser.click(screen.getByRole('button', { name: /^Statut/ }));
+    expect(screen.getByRole('menuitemcheckbox', { name: /Archivé/ })).toHaveAttribute('aria-checked', 'false');
+    await browser.click(screen.getByRole('menuitemcheckbox', { name: /Archivé/ }));
+    await waitFor(() => expect(router.state.location.search).toBe('?q=barman&status=OBSOLETE&status=ARCHIVED'));
+  });
+
   it('says what to change when nothing is found or the search is refused', async () => {
     server({
       'GET /api/v1/search': (request) => (new URL(request.url).searchParams.get('q') === 'le la de'

@@ -22,4 +22,10 @@ public interface OrganizationMembers {
      * @param excluded people not to return, for example those already in a space
      */
     List<OrganizationMember> search(UUID organizationId, String search, Collection<UUID> excluded, int limit);
+
+    /**
+     * The name and address of these accounts, whether their people are members or have left: the
+     * audit log names who did what, even after they left.
+     */
+    Map<UUID, Person> accounts(Collection<UUID> userIds);
 }
