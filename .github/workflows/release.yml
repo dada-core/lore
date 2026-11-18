@@ -194,9 +194,14 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
           PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
+          # An alpha may lose its data at the next version; a beta or a release candidate holds every
+          # feature of its version, and its data carries over.
+          case $VERSION in
+            *-alpha*) intro="Preview of Lore $VERSION, to try it out: not for production, its data may not carry over to the next version." ;;
+            *) intro="Preview of Lore $VERSION, with every feature of version ${VERSION%%-*}: its data will carry over to it." ;;
+          esac
           if [ "$PRERELEASE" = true ]; then
             set -- --prerelease
-            intro="Preview of Lore $VERSION, to try it out: not for production, its data may not carry over to the next version."
           else
             set --
             intro="Lore $VERSION."
