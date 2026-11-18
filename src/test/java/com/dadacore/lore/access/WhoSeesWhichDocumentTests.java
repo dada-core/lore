@@ -34,7 +34,8 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>In the space Infrastructure: A, open, imported by the contributor; B, open, by the
  * maintainer; R1, restricted to the reader, by the maintainer; R2, restricted to nobody, by the
  * maintainer; R3, restricted to nobody, by the contributor. And a document of another organization.
- * Each one holds a word that is only in it, and the word "commun".
+ * Each one holds a word that is only in it, and the word "commun". Some tests add AR, archived,
+ * imported by the contributor, and O, obsolete, replaced by R2.
  */
 class WhoSeesWhichDocumentTests extends ApiTest {
 
@@ -75,12 +76,41 @@ class WhoSeesWhichDocumentTests extends ApiTest {
     private String r3;
     private String other;
     private byte[] r2Content;
+    private String ar;
+    private String o;
     private int counter;
 
     @TestFactory
     Stream<DynamicTest> everyRouteAnswersAccordingToTheRoleOfThePerson() {
         organization();
+        archivedAndObsolete();
         List<Probe> probes = List.of(
+                // Versions and statuses: an archived document is seen by the maintainers only.
+                probe("GET AR, archived", p -> as(p).get(ar), 200, 200, 200, 404, 404, 404, 401),
+                probe("GET AR versions", p -> as(p).get(ar + "/versions"), 200, 200, 200, 404, 404, 404, 401),
+                probe("GET AR activity", p -> as(p).get(ar + "/activity"), 200, 200, 200, 404, 404, 404, 401),
+                probe("GET AR rendering", p -> as(p).get(ar + "/versions/1/rendering"), 200, 200, 200, 404, 404, 404, 401),
+                probe("POST AR new version", p -> as(p).upload(ar + "/versions", "AR.txt", ("AR " + next()).getBytes()),
+                        409, 409, 409, 404, 404, 404, 401),
+                probe("PATCH AR", p -> as(p).patch(ar, body("title", "AR " + next())), 409, 409, 409, 404, 404, 404, 401),
+                probe("POST A new version", p -> as(p).upload(a + "/versions", "A.txt", ("A " + next()).getBytes()),
+                        201, 201, 201, 201, 403, 404, 401),
+                probe("GET A versions", p -> as(p).get(a + "/versions"), 200, 200, 200, 200, 200, 404, 401),
+                probe("GET A version 1", p -> as(p).get(a + "/versions/1"), 200, 200, 200, 200, 200, 404, 401),
+                probe("GET A activity", p -> as(p).get(a + "/activity"), 200, 200, 200, 200, 200, 404, 401),
+                probe("GET R2 versions", p -> as(p).get(r2 + "/versions"), 200, 200, 200, 404, 404, 404, 401),
+                probe("GET R2 activity", p -> as(p).get(r2 + "/activity"), 200, 200, 200, 404, 404, 404, 401),
+                probe("PUT A status", p -> as(p).put(a + "/status", body("status", next() % 2 == 0 ? "DRAFT" : "PUBLISHED")),
+                        200, 200, 200, 200, 403, 404, 401),
+                probe("PUT status Archived", p -> as(p).put(fresh(Person.CONTRIBUTOR) + "/status", body("status", "ARCHIVED")),
+                        200, 200, 200, 403, 403, 404, 401),
+                probe("PUT status out of Archived", p -> as(p).put(archived() + "/status", body("status", "PUBLISHED")),
+                        200, 200, 200, 404, 404, 404, 401),
+                probe("PUT R2 status", p -> as(p).put(r2 + "/status", body("status", "PUBLISHED")), 200, 200, 200, 404, 404, 404, 401),
+                probe("GET home activity", p -> as(p).get("/api/v1/activity"), 200, 200, 200, 200, 200, 200, 401),
+                probe("GET the audit log", p -> as(p).get("/api/v1/admin/audit"), 200, 200, 403, 403, 403, 403, 401),
+                probe("GET the export of the audit log", p -> file(p, "/api/v1/admin/audit/export?category=status"),
+                        200, 200, 403, 403, 403, 403, 401),
                 probe("GET A", p -> as(p).get(a), 200, 200, 200, 200, 200, 404, 401),
                 probe("GET B", p -> as(p).get(b), 200, 200, 200, 200, 200, 404, 401),
                 probe("GET R1, restricted to the reader", p -> as(p).get(r1), 200, 200, 200, 404, 200, 404, 401),
@@ -225,6 +255,76 @@ class WhoSeesWhichDocumentTests extends ApiTest {
     }
 
     @Test
+    void anArchivedDocumentIsSeenByTheMaintainersOnlyAndOnlyWhenAsked() {
+        organization();
+        // Opened by the contributor, who imported it, before it was archived.
+        as(Person.CONTRIBUTOR).get(document(Person.CONTRIBUTOR, "vu.txt"));
+        archivedAndObsolete();
+        as(Person.CONTRIBUTOR).get(ar);
+
+        for (Person person : VISIBLE.keySet()) {
+            boolean maintainer = List.of(Person.OWNER, Person.ADMIN, Person.MAINTAINER).contains(person);
+            if (person == Person.OUTSIDER) {
+                continue;
+            }
+            // Never in a list, a count, the search or the palette by default.
+            assertThat(titles(as(person).get(space + "/documents"))).as(person.name()).doesNotContain("AR");
+            assertThat(titlesFound(as(person).get("/api/v1/search?q=gerbil"))).as(person.name()).isEmpty();
+            assertThat(as(person).get("/api/v1/search/titles?q=AR").json().size()).as(person.name()).isZero();
+            // The documents each one sees, the one opened before and O; AR in no count.
+            assertThat(as(person).get(space).number("documentCount")).as(person.name()).isEqualTo(VISIBLE.get(person).size() + 2);
+            // Asked for: the maintainers find it, the others do not, not even in a count.
+            assertThat(titles(as(person).get(space + "/documents?status=ARCHIVED"))).as(person.name())
+                    .isEqualTo(maintainer ? List.of("AR") : List.of());
+            Response search = as(person).get("/api/v1/search?q=gerbil&status=ARCHIVED");
+            assertThat(titlesFound(search)).as(person.name()).isEqualTo(maintainer ? List.of("AR") : List.of());
+            boolean offered = false;
+            // Its word, searched without a filter: offered in the filter of the statuses, to the maintainers only.
+            for (var status : as(person).get("/api/v1/search?q=gerbil").json().path("facets").path("statuses")) {
+                offered |= status.get("value").asString().equals("ARCHIVED");
+            }
+            assertThat(offered).as(person.name()).isEqualTo(maintainer);
+            assertThat(as(person).get(space + "/documents/summary").number("archived")).as(person.name())
+                    .isEqualTo(maintainer ? 1 : 0);
+            // Nor in the activity of the home page, for anyone.
+            assertThat(as(person).get("/api/v1/activity").json().toString()).as(person.name()).doesNotContain(id(ar));
+        }
+        // "Resume": the contributor no longer finds it there.
+        List<String> resumed = new ArrayList<>();
+        as(Person.CONTRIBUTOR).get("/api/v1/documents/recent?size=10").json().forEach(item -> resumed.add(item.path("title").asString()));
+        assertThat(resumed).doesNotContain("AR").isNotEmpty();
+    }
+
+    @Test
+    void anObsoleteDocumentNamesItsReplacementOnlyToWhoReadsIt() {
+        organization();
+        archivedAndObsolete();
+        for (Person person : List.of(Person.OWNER, Person.ADMIN, Person.MAINTAINER, Person.CONTRIBUTOR, Person.READER)) {
+            boolean reads = VISIBLE.get(person).contains("R2");
+            Response document = as(person).get(o);
+            assertThat(document.text("status")).isEqualTo("OBSOLETE");
+            Response found = as(person).get("/api/v1/search?q=okapi");
+            Response activity = as(person).get(o + "/activity");
+            if (reads) {
+                assertThat(document.text("replacedBy.title")).isEqualTo("R2");
+                assertThat(found.json().at("/items/0/document/replacedBy/title").asString()).isEqualTo("R2");
+                assertThat(activity.json().at("/items/0/details/replacedBy/title").asString()).isEqualTo("R2");
+            } else {
+                // Nothing of R2: neither its title nor its identifier, anywhere.
+                assertThat(document.at("replacedBy").isNull()).as(person.name()).isTrue();
+                for (Response response : List.of(document, found, activity)) {
+                    assertThat(response.json().toString()).as(person.name()).doesNotContain(id(r2)).doesNotContain("\"R2\"");
+                }
+            }
+        }
+        // Writing it: a replacement the person cannot read is answered as one that does not exist.
+        Response hidden = as(Person.CONTRIBUTOR).put(a + "/status", body("status", "OBSOLETE", "replacedBy", id(r2)));
+        Response invented = as(Person.CONTRIBUTOR).put(a + "/status", body("status", "OBSOLETE", "replacedBy",
+                UUID.randomUUID().toString()));
+        assertThat(hidden.json()).isEqualTo(invented.json());
+    }
+
+    @Test
     void aDuplicateNeverPointsToADocumentThePersonCannotSee() {
         organization();
 
@@ -360,6 +460,36 @@ class WhoSeesWhichDocumentTests extends ApiTest {
             r2Content = content;
         }
         return "/api/v1/documents/" + created(as(person).upload(space + "/documents", filename, content, fields));
+    }
+
+    /**
+     * AR, archived by the maintainer, imported by the contributor; O, obsolete, replaced by R2. Each
+     * with its own word: "gerbil", "okapi".
+     */
+    private void archivedAndObsolete() {
+        ar = document(Person.CONTRIBUTOR, "AR.txt");
+        o = document(Person.MAINTAINER, "O.txt");
+        for (String document : List.of(ar, o)) {
+            String title = document.equals(ar) ? "AR" : "O";
+            UUID version = jdbc.sql("select current_version_id from document where id = ?::uuid").param(id(document))
+                    .query(UUID.class).single();
+            jdbc.sql("update document set title = ? where id = ?::uuid").params(title, id(document)).update();
+            results.extracted(version, new Extraction(false, "fr", null, false, null,
+                    List.of(new ExtractedChunk(0, "part-1", null, List.of(),
+                            "Contenu " + (document.equals(ar) ? "gerbil" : "okapi"))),
+                    new Rendering(List.of("<section id=\"part-1\"><pre>Contenu</pre></section>"),
+                            List.of(new Rendering.Place("part-1", 1, 0, null)), false)));
+        }
+        assertThat(as(Person.MAINTAINER).put(ar + "/status", body("status", "ARCHIVED")).status()).isEqualTo(200);
+        assertThat(as(Person.MAINTAINER).put(o + "/status", body("status", "OBSOLETE", "replacedBy", id(r2))).status())
+                .isEqualTo(200);
+    }
+
+    /** A new document, archived by the maintainer, for a probe that brings one back. */
+    private String archived() {
+        String document = fresh(Person.MAINTAINER);
+        as(Person.MAINTAINER).put(document + "/status", body("status", "ARCHIVED"));
+        return document;
     }
 
     /** A new document, for a probe that deletes one. */

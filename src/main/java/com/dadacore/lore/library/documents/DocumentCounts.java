@@ -8,7 +8,7 @@ import com.dadacore.lore.access.DocumentAccess;
 import com.dadacore.lore.identity.Viewer;
 import org.springframework.stereotype.Component;
 
-/** The number of documents a person sees in each space, for the lists of spaces. */
+/** The number of documents a person sees in each space, for the lists of spaces; all of them, for a deletion. */
 @Component
 public class DocumentCounts {
 
@@ -22,5 +22,10 @@ public class DocumentCounts {
 
     public Map<UUID, Long> counts(Viewer viewer, Collection<UUID> spaceIds) {
         return documents.countBySpace(spaceIds, access.readableDocuments(viewer, "d", "s"));
+    }
+
+    /** Every document of the space, whatever its status and its access: those its deletion takes. */
+    public long all(UUID spaceId) {
+        return documents.countAll(spaceId);
     }
 }

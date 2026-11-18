@@ -56,17 +56,22 @@ class SearchIndexAdapter implements SearchIndex {
     private static final int OTHER_PASSAGES = 5;
     private static final String QUERY_CANCELED = "57014";
     private static final java.util.regex.Pattern LETTERS = java.util.regex.Pattern.compile("\\p{L}+");
+    /** The statuses shown when none is asked: all but Archived. */
+    private static final String[] SHOWN_STATUSES = {"DRAFT", "PUBLISHED", "OBSOLETE"};
 
     private final JdbcClient jdbc;
     private final DocumentAccess access;
+    private final DocumentRepository documents;
     private final TransactionTemplate transaction;
     private final JsonMapper json;
     private final Duration timeout;
 
-    SearchIndexAdapter(JdbcClient jdbc, DocumentAccess access, PlatformTransactionManager transactions, JsonMapper json,
+    SearchIndexAdapter(JdbcClient jdbc, DocumentAccess access, DocumentRepository documents,
+            PlatformTransactionManager transactions, JsonMapper json,
             @Value("${lore.search.statement-timeout:5s}") Duration timeout) {
         this.jdbc = jdbc;
         this.access = access;
+        this.documents = documents;
         this.transaction = new TransactionTemplate(transactions);
         this.transaction.setReadOnly(true);
         // Its own: the limits below never stay in the transaction of a caller (the assistant, later).
@@ -113,8 +118,8 @@ class SearchIndexAdapter implements SearchIndex {
                 params.add(term.wide());
                 params.add(term.simple());
             }
-            params.add(analysis.wide());
-            params.add(analysis.simple());
+            params.add(noPhrase(analysis.wide()));
+            params.add(noPhrase(analysis.simple()));
             params.add(analysis.wide());
             params.add(analysis.simple());
             params.add(analysis.excludedLang());
@@ -129,8 +134,11 @@ class SearchIndexAdapter implements SearchIndex {
             params.add(request.spaces().toArray(UUID[]::new));
             params.add(request.categories().toArray(String[]::new));
             params.add(request.categories().toArray(String[]::new));
-            params.add(request.statuses().toArray(String[]::new));
-            params.add(request.statuses().toArray(String[]::new));
+            // Archived documents only when asked, even for who sees them.
+            String[] statuses = request.statuses().isEmpty() ? SHOWN_STATUSES : request.statuses().toArray(String[]::new);
+            boolean archivedAsked = request.statuses().contains("ARCHIVED");
+            params.add(statuses);
+            params.add(statuses);
             params.add(request.formats().toArray(String[]::new));
             params.add(request.formats().toArray(String[]::new));
             params.add(request.updatedSince() == null ? null : java.sql.Timestamp.from(request.updatedSince()));
@@ -138,12 +146,15 @@ class SearchIndexAdapter implements SearchIndex {
             long offset = (long) request.page() * request.size();
             params.add(offset);
             params.add(offset + request.size());
+            params.add(archivedAsked);
+            params.add(request.includeArchived());
+            params.add(archivedAsked);
             params.add(request.includeArchived());
             params.add(request.includeArchived());
-            params.add(request.includeArchived());
+            params.add(archivedAsked);
             String result = jdbc.sql(statement(analysis.terms().size()).replace(":readable", readable.sql()))
                     .params(params).query(String.class).single();
-            return found(json.readTree(result));
+            return found(viewer, json.readTree(result));
         });
     }
 
@@ -176,7 +187,8 @@ class SearchIndexAdapter implements SearchIndex {
                     join space s on s.id = d.space_id
                     join document_version v on v.id = d.current_version_id
                     left join folder f on f.id = d.folder_id
-                    where d.tsv_simple @@ ?::tsquery and s.organization_id = ? and s.archived_at is null and (:readable)
+                    where d.tsv_simple @@ ?::tsquery and s.organization_id = ? and s.archived_at is null
+                      and d.status <> 'ARCHIVED' and (:readable)
                     order by starts_with(lower(unaccent(d.title)), lower(unaccent(?))) desc, d.updated_at desc, d.id
                     limit ?
                     """.replace(":readable", readable.sql()))
@@ -326,6 +338,56 @@ class SearchIndexAdapter implements SearchIndex {
         return out.toString();
     }
 
+    /**
+     * The phrase operators of a query ({@code <->}, {@code <2>}) written as AND, outside its quoted
+     * lexemes: what the index answers alone, without reading a vector again. An identifier is a phrase
+     * for PostgreSQL ({@code pg_restore} is {@code 'pg' <-> 'restore'}): the passages found that way
+     * hold all its words, and those of the phrase rank higher anyway.
+     */
+    static String noPhrase(String query) {
+        StringBuilder out = new StringBuilder(query.length());
+        boolean quoted = false;
+        int i = 0;
+        while (i < query.length()) {
+            char c = query.charAt(i);
+            if (quoted) {
+                out.append(c);
+                if (c == '\\' && i + 1 < query.length()) {
+                    out.append(query.charAt(i + 1));
+                    i += 2;
+                    continue;
+                }
+                if (c == '\'') {
+                    if (i + 1 < query.length() && query.charAt(i + 1) == '\'') {
+                        out.append('\'');
+                        i += 2;
+                        continue;
+                    }
+                    quoted = false;
+                }
+                i++;
+                continue;
+            }
+            if (c == '\'') {
+                quoted = true;
+                out.append(c);
+                i++;
+                continue;
+            }
+            if (c == '<') {
+                int end = query.indexOf('>', i);
+                if (end > i && query.substring(i + 1, end).matches("-|\\d+")) {
+                    out.append('&');
+                    i = end + 1;
+                    continue;
+                }
+            }
+            out.append(c);
+            i++;
+        }
+        return out.toString();
+    }
+
     /** A lexeme quoted for a {@code tsquery}. */
     private static String quoted(String lexeme) {
         return "'" + lexeme.replace("\\", "\\\\").replace("'", "''") + "'";
@@ -353,7 +415,18 @@ class SearchIndexAdapter implements SearchIndex {
         }
     }
 
-    private Found found(JsonNode result) {
+    private Found found(Viewer viewer, JsonNode result) {
+        // The documents that replace obsolete ones, when the person may read them: no title otherwise.
+        java.util.Set<UUID> replacing = new java.util.HashSet<>();
+        for (JsonNode item : result.path("items")) {
+            JsonNode replacedBy = item.path("replaced_by_id");
+            if (!replacedBy.isNull() && !replacedBy.isMissingNode()) {
+                replacing.add(UUID.fromString(replacedBy.asString()));
+            }
+        }
+        java.util.Map<UUID, DocumentRef> readable = new java.util.HashMap<>();
+        documents.findAll(viewer.organizationId(), replacing, access.readableDocuments(viewer, "d", "s"))
+                .forEach(row -> readable.put(row.id(), new DocumentRef(row.id(), row.title())));
         List<FoundDocument> items = new ArrayList<>();
         for (JsonNode item : result.path("items")) {
             List<PassageRef> others = new ArrayList<>();
@@ -384,7 +457,9 @@ class SearchIndexAdapter implements SearchIndex {
                     passage,
                     text(item.path("description")),
                     Math.max(0, item.path("passage_count").asInt() - 1),
-                    List.copyOf(others)));
+                    List.copyOf(others),
+                    item.path("replaced_by_id").isNull() || item.path("replaced_by_id").isMissingNode() ? null
+                            : readable.get(UUID.fromString(item.path("replaced_by_id").asString()))));
         }
         JsonNode facets = result.path("facets");
         List<SpaceCount> spaces = new ArrayList<>();
@@ -455,10 +530,15 @@ class SearchIndexAdapter implements SearchIndex {
 
     /** The passages, titles and descriptions of the candidates that hold some of the terms, ranked. */
     private static final String MATCHING = """
-            -- The passages that hold some of the terms, through the indexes alone: no vector is read.
+            -- The passages of the candidates that hold some of the terms, through the indexes alone: no
+            -- vector is read (phrases written as AND), then kept for the candidates only.
             hits as materialized (
-                select c.version_id, c.id from chunk c
-                where c.tsv_lang @@ ?::tsquery or c.tsv_simple @@ ?::tsquery
+                select h.version_id, h.id from (
+                    select c.version_id, c.id from chunk c
+                    where c.tsv_lang @@ ?::tsquery or c.tsv_simple @@ ?::tsquery
+                    offset 0
+                ) h
+                where h.version_id in (select version_id from candidates)
             ),
             -- The documents whose title or description holds some of the terms, through their indexes.
             titled as materialized (
@@ -480,7 +560,7 @@ class SearchIndexAdapter implements SearchIndex {
             -- description only, having no passage. A word left out, anywhere, leaves a document out.
             readable as (
                 select d.id, d.space_id, d.folder_id, d.title, d.description, d.category, d.status, d.restricted,
-                    d.updated_at, d.search_language, d.current_version_id,
+                    d.updated_at, d.search_language, d.current_version_id, d.replaced_by_id,
                     v.number, v.media_type, v.language, v.extraction_status,
                     s.name as space_name, s.slug as space_slug, s.archived_at is not null as archived
                 from document d
@@ -577,6 +657,7 @@ class SearchIndexAdapter implements SearchIndex {
                                  else ts_headline('lore_simple', p.title, q.simple, '%2$s') end,
                         'status', p.status, 'category', p.category, 'media_type', p.media_type, 'language', p.language,
                         'restricted', p.restricted, 'extraction_status', p.extraction_status,
+                        'replaced_by_id', case when p.status = 'OBSOLETE' then p.replaced_by_id end,
                         'updated_ms', (extract(epoch from p.updated_at) * 1000)::bigint,
                         'space_id', p.space_id, 'space_name', p.space_name, 'space_slug', p.space_slug,
                         'archived', p.archived, 'folder_id', p.folder_id, 'folder_name', f.name,
@@ -611,14 +692,15 @@ class SearchIndexAdapter implements SearchIndex {
                     'spaces', coalesce((select json_agg(json_build_object('id', x.space_id, 'name', x.space_name,
                             'slug', x.space_slug, 'archived', x.archived, 'count', x.n) order by x.archived, x.n desc, x.space_name)
                         from (select space_id, space_name, space_slug, archived, count(*) as n from found
-                              group by space_id, space_name, space_slug, archived) x), '[]'::json),
+                              where status <> 'ARCHIVED' or ? group by space_id, space_name, space_slug, archived) x), '[]'::json),
                     'categories', coalesce((select json_agg(json_build_object('value', x.category, 'count', x.n) order by x.n desc, x.category)
                         from (select category, count(*) as n from found where category is not null
-                              and (not archived or ?) group by category) x), '[]'::json),
+                              and (not archived or ?) and (status <> 'ARCHIVED' or ?) group by category) x), '[]'::json),
                     'statuses', coalesce((select json_agg(json_build_object('value', x.status, 'count', x.n) order by x.n desc, x.status)
                         from (select status, count(*) as n from found where not archived or ? group by status) x), '[]'::json),
                     'formats', coalesce((select json_agg(json_build_object('value', x.media_type, 'count', x.n) order by x.n desc, x.media_type)
-                        from (select media_type, count(*) as n from found where not archived or ? group by media_type) x), '[]'::json)
+                        from (select media_type, count(*) as n from found where (not archived or ?)
+                              and (status <> 'ARCHIVED' or ?) group by media_type) x), '[]'::json)
                 )
             )::text
             """.formatted(EXCERPT, WHOLE, OTHER_PASSAGES, RANKED, PASSAGE_RANK);

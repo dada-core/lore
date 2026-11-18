@@ -18,6 +18,8 @@ import { Modal } from '../ui/Modal';
 import { usePanel } from '../ui/preferences';
 import { useNotify } from '../ui/Toast';
 import { AccessDialog, DescriptionDialog, LinkDialog, MoveDialog, OwnerDialog } from './DocumentDialogs';
+import { Activity, Strata } from './History';
+import { NewVersionDialog, StatusDialog } from './VersionDialogs';
 import {
   CATEGORIES,
   categoryName,
@@ -45,7 +47,7 @@ import { documentLink, readTarget, sectionLink } from './reader/target';
 
 const MAX_TITLE = 200;
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-type Dialog = 'access' | 'move' | 'delete' | 'description' | 'owner' | 'language';
+type Dialog = 'access' | 'move' | 'delete' | 'description' | 'owner' | 'language' | 'version' | 'status' | 'archive';
 
 // pdf.js and its viewer are loaded only when a PDF is opened.
 const PdfViewer = lazy(() => import('./reader/PdfViewer'));
@@ -60,8 +62,10 @@ export function DocumentPage() {
   const { id = '' } = useParams();
   const document = useQuery({
     ...documentQuery(id),
-    // While its text is extracted, the page asks again every ten seconds; not after an error.
-    refetchInterval: whileExtracting((data) => data.currentVersion.extractionStatus === 'PENDING'),
+    // While its text is extracted, or the one of a new version, the page asks again every ten
+    // seconds; not after an error.
+    refetchInterval: whileExtracting((data) => data.currentVersion.extractionStatus === 'PENDING'
+      || data.newerVersion?.extractionStatus === 'PENDING'),
   });
 
   if (document.error instanceof ApiError && document.error.status === 404) return <NotFoundPage />;
@@ -112,6 +116,12 @@ function DocumentView({ document }: { document: Document }) {
   useEffect(() => {
     void queryClient.invalidateQueries({ queryKey: keys.recentDocuments });
   }, [document.id]);
+  // A new version became current, another status, any change of the document: the history and the activity follow.
+  const shownState = `${version.number}:${document.newerVersion?.number ?? ''}:${document.newerVersion?.extractionStatus ?? ''}:${document.status}:${document.updatedAt}:${document.folder?.id ?? ''}:${document.restricted}:${document.owner?.id ?? ''}`;
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: keys.documentVersions(document.id) });
+    void queryClient.invalidateQueries({ queryKey: keys.documentActivity(document.id) });
+  }, [document.id, shownState]);
   // The place of the address: the reader opens there. A window opened over the page
   // (?open=import) changes the address without reloading the reader.
   const [target, setTarget] = useState(() => readTarget(location.search, location.hash));
@@ -133,6 +143,10 @@ function DocumentView({ document }: { document: Document }) {
       { replace: true, preventScrollReset: true, state: location.state });
   }, [navigate, location.pathname, location.search, location.state]);
   const otherVersion = target.version !== null && target.version !== version.number;
+  // A link made for an older version opens the current one: at the section of the same title, or
+  // the same page of a PDF, which the server or the viewer finds.
+  const olderVersion = otherVersion && target.version !== null && target.version < version.number;
+  const [sectionFound, setSectionFound] = useState<boolean | null>(null);
   const pdf = isPdf(version.mediaType);
   const fileUrl = `/api/v1/documents/${document.id}/versions/${version.number}/file`;
 
@@ -180,7 +194,8 @@ function DocumentView({ document }: { document: Document }) {
     mutationFn: () => call(() => api.POST('/api/v1/documents/{id}/extraction/retry', { params: { path: { id: document.id } } })),
     onSuccess: (retried) => {
       queryClient.setQueryData(keys.document(document.id), retried);
-      setFollowed(true);
+      // The end of an attempt at the current version is told; a new version tells its own in its banner.
+      if (!retried.newerVersion) setFollowed(true);
       void refreshDocuments(space.id);
       notify(t('extraction.retried'));
     },
@@ -231,7 +246,8 @@ function DocumentView({ document }: { document: Document }) {
   // carries the words of q only.
   const search = target.fromSearch ? fromSearch(location.state) : null;
   const highlighted = search?.words.length ? { ...target, query: `${target.query} ${search.words.join(' ')}` } : target;
-  const reader = otherVersion ? { ...target, place: null, page: null, query: '' } : highlighted;
+  const reader = otherVersion && !olderVersion ? { ...target, place: null, page: null, query: '' } : highlighted;
+  const pageKept = olderVersion && pdf && target.page !== null && (version.pageCount == null || target.page <= version.pageCount);
   // Opened from the results: back in the history, which finds the list as it was. Opened from a
   // link: the results of its words.
   const backToResults = () => {
@@ -241,12 +257,17 @@ function DocumentView({ document }: { document: Document }) {
   };
   const fromResults = target.fromSearch && target.query.trim() !== '';
 
+  const newer = document.newerVersion;
   const menu = (
     <Menu align="end" label={t('document.moreActions')} trigger={<Icon name="dots" />}>
+      {actions.changeStatus && <MenuItem icon="tag" onSelect={() => setDialog('status')}>{t('status.change')}</MenuItem>}
+      {actions.archive && document.status !== 'ARCHIVED' && (
+        <MenuItem icon="archive" onSelect={() => setDialog('archive')}>{t('status.archive')}</MenuItem>
+      )}
       {actions.manageAccess && <MenuItem icon="lock" onSelect={() => setDialog('access')}>{t('document.manageAccess')}</MenuItem>}
       {actions.edit && <MenuItem icon="folder" onSelect={() => setDialog('move')}>{t('document.move')}</MenuItem>}
       {actions.changeOwner && <MenuItem icon="user" onSelect={() => setDialog('owner')}>{t('document.changeOwner')}</MenuItem>}
-      {(actions.manageAccess || actions.edit || actions.changeOwner) && <MenuSeparator />}
+      {(actions.manageAccess || actions.edit || actions.changeOwner || actions.changeStatus) && <MenuSeparator />}
       <MenuItem icon="link" onSelect={() => void copyLink(documentLink(document.id), false)}>{t('reader.copyLink')}</MenuItem>
       {pdf && version.fileAvailable && (
         <MenuItem icon="external" onSelect={() => window.open(`${fileUrl}?disposition=inline`, '_blank', 'noopener')}>
@@ -266,6 +287,11 @@ function DocumentView({ document }: { document: Document }) {
       crumbs={crumbs}
       actions={(
         <>
+          {actions.newVersion && (
+            <button type="button" className="btn" onClick={() => setDialog('version')}>
+              <Icon name="upload" />{t('version.new')}
+            </button>
+          )}
           {version.fileAvailable && (
             <a className="icon-btn" href={fileUrl} aria-label={t('reader.download')} title={t('reader.download')}>
               <Icon name="download" />
@@ -300,8 +326,65 @@ function DocumentView({ document }: { document: Document }) {
                 </button>
               </div>
             )}
-            {notice === 'missing' && <Callout role="status">{t('reader.missing')}</Callout>}
-            {otherVersion && <Callout role="status">{t('reader.changed', { version: target.version ?? 0 })}</Callout>}
+            {document.status === 'OBSOLETE' && (
+              <Callout tone="warn">
+                {t('status.obsoleteSince', { date: i18n.date(document.statusChangedAt) })}
+                {document.replacedBy && (
+                  <> {t('status.useInstead')} <Link to={`/documents/${document.replacedBy.id}`}><bdi>{document.replacedBy.title}</bdi></Link>.</>
+                )}
+              </Callout>
+            )}
+            {document.status === 'ARCHIVED' && (
+              <Callout>{t('status.archivedSince', { date: i18n.date(document.statusChangedAt) })}</Callout>
+            )}
+            {newer?.extractionStatus === 'PENDING' && (
+              <div className="callout" role="status">
+                <Spinner />
+                <p>{t('version.pending')}</p>
+              </div>
+            )}
+            {newer?.extractionStatus === 'FAILED' && actions.newVersion && (
+              <Callout tone="error">
+                <div className="row-between">
+                  <span>{t('version.failed', { number: newer.number, cause: failureCause(i18n, newer.extractionError) })}</span>
+                  <span className="row-end">
+                    {actions.retry && (
+                      <button type="button" className="btn" disabled={retry.isPending} onClick={() => retry.mutate()}>
+                        {retry.isPending ? <Spinner /> : <Icon name="refresh" />}
+                        {t('extraction.retry')}
+                      </button>
+                    )}
+                    <button type="button" className="btn" onClick={() => setDialog('version')}>{t('version.importAnother')}</button>
+                  </span>
+                </div>
+              </Callout>
+            )}
+            {notice === 'missing' && !olderVersion && <Callout role="status">{t('reader.missing')}</Callout>}
+            {otherVersion && !olderVersion && <Callout role="status">{t('reader.changed', { version: target.version ?? 0 })}</Callout>}
+            {olderVersion && !pdf && target.place === null && (
+              <Callout role="status">
+                <div className="row-between">
+                  <span>{t('version.linkVersion', { number: target.version ?? 0 })}</span>
+                  <Link className="btn" to={`/documents/${document.id}/versions/${target.version}`}>
+                    {t('version.show', { number: target.version ?? 0 })}
+                  </Link>
+                </div>
+              </Callout>
+            )}
+            {olderVersion && (sectionFound !== null || pdf) && (
+              <Callout role="status">
+                <div className="row-between">
+                  <span>
+                    {(pdf ? pageKept : sectionFound)
+                      ? t('version.linkFound', { number: target.version ?? 0 })
+                      : t('version.linkChanged', { number: target.version ?? 0 })}
+                  </span>
+                  <Link className="btn" to={`/documents/${document.id}/versions/${target.version}`}>
+                    {t('version.show', { number: target.version ?? 0 })}
+                  </Link>
+                </div>
+              </Callout>
+            )}
             {!version.fileAvailable && <Callout tone="error">{t('reader.fileMissing')}</Callout>}
             {status === 'PENDING' && (
               <div className="callout" role="status">
@@ -328,7 +411,7 @@ function DocumentView({ document }: { document: Document }) {
                     {t('failure.line', { cause: failureCause(i18n, version.extractionError) })}
                     {fix && <> {fix}</>}
                   </span>
-                  {actions.retry && (
+                  {actions.retry && !document.newerVersion && (
                     <button type="button" className="btn" disabled={retry.isPending} onClick={() => retry.mutate()}>
                       {retry.isPending ? <Spinner /> : <Icon name="refresh" />}
                       {t('extraction.retry')}
@@ -402,6 +485,8 @@ function DocumentView({ document }: { document: Document }) {
                   key={version.id}
                   document={document}
                   target={reader}
+                  fromVersion={olderVersion ? target.version : null}
+                  onFound={(anchor) => setSectionFound(anchor !== null)}
                   navigationRef={navigation}
                   onOutline={setOutline}
                   onReading={setReading}
@@ -411,6 +496,7 @@ function DocumentView({ document }: { document: Document }) {
                 />
               )}
             </div>
+            <Activity document={document} />
           </div>
         </div>
 
@@ -450,6 +536,10 @@ function DocumentView({ document }: { document: Document }) {
         >
           <p>{t('language.confirmBody')}</p>
         </Modal>
+      )}
+      {dialog === 'version' && <NewVersionDialog document={document} onClose={() => setDialog(null)} />}
+      {(dialog === 'status' || dialog === 'archive') && (
+        <StatusDialog document={document} initial={dialog === 'archive' ? 'ARCHIVED' : undefined} onClose={() => setDialog(null)} />
       )}
       {dialog === 'access' && <AccessDialog document={document} onClose={() => setDialog(null)} />}
       {dialog === 'move' && <MoveDialog document={document} onClose={() => setDialog(null)} />}
@@ -551,7 +641,6 @@ function Properties({ document, outline, reading, navigationRef, onDialog, onCat
 }) {
   const i18n = useI18n();
   const { t } = i18n;
-  const notify = useNotify();
   const { actions, space, folder, currentVersion: version } = document;
   const access = useQuery({
     queryKey: keys.documentAccess(document.id),
@@ -563,14 +652,24 @@ function Properties({ document, outline, reading, navigationRef, onDialog, onCat
     ? i18n.tp('document.pageCount', version.pageCount)
     : version.sectionCount != null && version.extractionStatus === 'INDEXED' ? i18n.tp('document.sectionCount', version.sectionCount) : null;
   const format = [formatName(i18n, version.mediaType), counted, sizeText(i18n, version.sizeBytes)].filter(Boolean).join(', ');
-  const fileUrl = `/api/v1/documents/${document.id}/versions/${version.number}/file`;
 
   return (
     <aside className="props" id="document-props" aria-label={t('document.properties')}>
       <section>
         <h2>{t('document.properties')}</h2>
         <dl>
-          <div className="prop"><dt>{t('document.prop.status')}</dt><dd><span className="prop-val prop-static"><StatusLabel status={document.status} /></span></dd></div>
+          <div className="prop">
+            <dt>{t('document.prop.status')}</dt>
+            <dd>
+              {actions.changeStatus ? (
+                <button type="button" className="prop-val" aria-label={t('status.changeOf', { status: t(`docStatus.${document.status as 'DRAFT'}`) })} onClick={() => onDialog('status')}>
+                  <StatusLabel status={document.status} />
+                </button>
+              ) : (
+                <span className="prop-val prop-static"><StatusLabel status={document.status} /></span>
+              )}
+            </dd>
+          </div>
           <div className="prop">
             <dt>{t('document.prop.owner')}</dt>
             <dd>
@@ -697,31 +796,7 @@ function Properties({ document, outline, reading, navigationRef, onDialog, onCat
 
       <section aria-labelledby="document-versions">
         <h2 id="document-versions">{t('document.versions')}</h2>
-        <div className="version-card">
-          <strong>{t('document.version', { number: version.number })}</strong>
-          <span className="help">
-            {version.author
-              ? t('document.versionBy', { date: i18n.date(version.createdAt), name: version.author.displayName })
-              : t('document.versionOn', { date: i18n.date(version.createdAt) })}
-          </span>
-          <span className="help path">{version.filename}</span>
-          <span className="fingerprint">
-            <span className="help">{t('document.fingerprint')}</span>
-            <code title={version.sha256}>{version.sha256.slice(0, 16)}…</code>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label={t('document.copyFingerprint')}
-              title={t('document.copyFingerprint')}
-              onClick={async () => notify(t((await copyText(version.sha256)) ? 'document.fingerprintCopied' : 'common.copyFailed'))}
-            >
-              <Icon name="copy" />
-            </button>
-          </span>
-          {version.fileAvailable && (
-            <a className="btn" href={fileUrl}><Icon name="download" />{t('document.downloadVersion')}</a>
-          )}
-        </div>
+        <Strata document={document} />
       </section>
 
       <Outline items={outline} current={reading} navigationRef={navigationRef} linkable={!isPdf(version.mediaType)} />

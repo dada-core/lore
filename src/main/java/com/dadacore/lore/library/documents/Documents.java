@@ -41,12 +41,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The documents of the spaces, once imported: lists, the page of a document, its title,
- * description and category, its folder, its access, its deletion, and a new attempt at its
- * extraction.
+ * description and category, its folder, its access, its status, its versions, its deletion, and a
+ * new attempt at its extraction.
  *
  * <p>Every read adds the condition of {@link DocumentAccess}: a document the person cannot see
  * appears nowhere, not even in a count. Every change locks the space first, like the folders, and
- * an archived space refuses it ({@code 409 space_archived}).
+ * an archived space refuses it ({@code 409 space_archived}). An archived document accepts only a
+ * change of its status and its deletion ({@code 409 document_archived}).
  */
 @Service
 public class Documents {
@@ -73,9 +74,14 @@ public class Documents {
         RUNBOOK, OPERATING_PROCEDURE, INCIDENT_REPORT, SECURITY, VENDOR, ARCHITECTURE, TECHNICAL
     }
 
-    /** The statuses a document can be imported with; the others come with the versions. */
+    /** The statuses a document can be imported with, or take with a new version. */
     enum ImportStatus {
         DRAFT, PUBLISHED
+    }
+
+    /** The statuses of a document. */
+    enum Status {
+        DRAFT, PUBLISHED, OBSOLETE, ARCHIVED
     }
 
     private final DocumentRepository documents;
@@ -87,11 +93,12 @@ public class Documents {
     private final OrganizationMembers people;
     private final ExtractionQueue queue;
     private final FileJanitor janitor;
+    private final DocumentLocks locks;
     private final AuditLog audit;
 
     Documents(DocumentRepository documents, DocumentViews views, Spaces spaces, DocumentAccess access,
             DocumentGrants grants, SpaceMembers members, OrganizationMembers people, ExtractionQueue queue,
-            FileJanitor janitor, AuditLog audit) {
+            FileJanitor janitor, DocumentLocks locks, AuditLog audit) {
         this.documents = documents;
         this.views = views;
         this.spaces = spaces;
@@ -101,6 +108,7 @@ public class Documents {
         this.people = people;
         this.queue = queue;
         this.janitor = janitor;
+        this.locks = locks;
         this.audit = audit;
     }
 
@@ -128,8 +136,21 @@ public class Documents {
     record AccessChange(@Nullable Boolean restricted, @Nullable List<UUID> userIds) {
     }
 
-    /** The counts of the documents the person sees in a space. */
-    record DocumentSummary(long total, long inProgress, long scanned, long failed, List<FolderDocuments> folders) {
+    /**
+     * The counts of the documents the person sees in a space.
+     *
+     * @param archived the archived documents, apart: they count nowhere else, and only the
+     *                 maintainers see them
+     */
+    record DocumentSummary(long total, long inProgress, long scanned, long failed, long archived,
+            List<FolderDocuments> folders) {
+    }
+
+    /**
+     * A new status; {@code replacedBy}, for Obsolete only, the document that replaces it, which the
+     * person may read.
+     */
+    record StatusChange(@Nullable String status, @Nullable UUID replacedBy) {
     }
 
     /** {@code folderId} null: the documents at the root of the space. */
@@ -145,13 +166,17 @@ public class Documents {
             String status, Instant viewedAt) {
     }
 
-    /** A document imported by the person, still in progress or failed, for the home page. */
-    record AttentionItem(UUID id, String title, DocumentViews.SpaceLink space, String extractionStatus,
+    /**
+     * A version imported by the person, still in progress or failed, for the home page: a first
+     * import, or a new version of a document.
+     */
+    record AttentionItem(UUID id, String title, DocumentViews.SpaceLink space, int version, String extractionStatus,
             @Nullable String extractionError) {
     }
 
     PageResponse<DocumentItem> list(Viewer viewer, UUID spaceId, @Nullable String folder, @Nullable Boolean restricted,
-            @Nullable List<UUID> ids, @Nullable String sort, @Nullable String direction, PageQuery page) {
+            @Nullable List<UUID> ids, @Nullable List<String> statuses, @Nullable String sort, @Nullable String direction,
+            PageQuery page) {
         Space space = spaces.open(viewer, spaceId, SpaceRole.READER).space();
         Checks checks = Checks.start();
         boolean root = "none".equals(folder);
@@ -167,6 +192,13 @@ public class Documents {
         if (chosen.size() > MAX_IDS) {
             checks.fail("ids", "too_many", Map.of("max", MAX_IDS));
         }
+        List<String> shown = new ArrayList<>();
+        for (String status : statuses == null ? List.<String>of() : statuses) {
+            Status value = checks.oneOf("status", status.toUpperCase(Locale.ROOT), Status.class);
+            if (value != null && !shown.contains(value.name())) {
+                shown.add(value.name());
+            }
+        }
         DocumentRepository.Sort order = sort == null ? DocumentRepository.Sort.UPDATED
                 : checks.oneOf("sort", sort.toUpperCase(Locale.ROOT), DocumentRepository.Sort.class);
         Boolean descending = null;
@@ -180,11 +212,17 @@ public class Documents {
         checks.orThrow();
         // The latest first; titles, categories, statuses and sizes in their order.
         boolean desc = descending != null ? descending : order == DocumentRepository.Sort.UPDATED;
-        DocumentRepository.Filter filter = new DocumentRepository.Filter(folderId, root, restricted, chosen);
+        DocumentRepository.Filter filter = new DocumentRepository.Filter(folderId, root, restricted, chosen, shown);
         SqlCondition readable = readable(viewer);
         List<DocumentRepository.Row> rows = documents.list(space.id(), readable, filter, order, desc, page.offset(),
                 page.size());
-        return new PageResponse<>(views.items(space.organizationId(), rows), page.page(), page.size(),
+        Map<UUID, DocumentRepository.Version> newer = new HashMap<>();
+        for (DocumentRepository.Row row : rows) {
+            if (row.latestNumber() > row.version().number()) {
+                newer.put(row.id(), documents.latest(row.id()));
+            }
+        }
+        return new PageResponse<>(views.items(space.organizationId(), rows, newer), page.page(), page.size(),
                 documents.count(space.id(), readable, filter));
     }
 
@@ -192,14 +230,18 @@ public class Documents {
         Space space = spaces.open(viewer, spaceId, SpaceRole.READER).space();
         DocumentRepository.Summary summary = documents.summary(space.id(), readable(viewer));
         return new DocumentSummary(summary.total(), summary.inProgress(), summary.scanned(), summary.failed(),
-                summary.folders().stream().map(f -> new FolderDocuments(f.folderId(), f.count())).toList());
+                summary.archived(), summary.folders().stream().map(f -> new FolderDocuments(f.folderId(), f.count())).toList());
     }
 
-    /** The page of a document: its opening is a view, recorded once an hour at most. */
-    DocumentView get(Viewer viewer, UUID id) {
+    /**
+     * The page of a document: its opening is a view, recorded once an hour at most, with the version
+     * shown ({@code version}, an older one; the current one by default).
+     */
+    DocumentView get(Viewer viewer, UUID id, @Nullable Integer version) {
         Opened opened = open(viewer, id);
-        audit.recordOnce(entry(viewer, opened, VIEWED).detail("version", opened.row().version().number()).build(),
-                VIEW_ONCE);
+        int shown = version != null && version >= 1 && version <= opened.row().latestNumber() ? version
+                : opened.row().version().number();
+        audit.recordOnce(entry(viewer, opened, VIEWED).detail("version", shown).build(), VIEW_ONCE);
         return view(viewer, opened, null);
     }
 
@@ -210,7 +252,7 @@ public class Documents {
      */
     @Transactional
     DocumentView update(Viewer viewer, UUID id, DocumentChanges changes) {
-        Opened opened = openForChange(viewer, id, SpaceRole.CONTRIBUTOR);
+        Opened opened = writable(openForChange(viewer, id, SpaceRole.CONTRIBUTOR));
         DocumentRepository.Row row = opened.row();
         Checks checks = Checks.start();
         // Control characters out: they would read as the marks of the words found by the search.
@@ -273,7 +315,7 @@ public class Documents {
     /** Field error {@code folderId:unknown_folder}, the same for a folder of another space. */
     @Transactional
     DocumentView move(Viewer viewer, UUID id, DocumentMove move) {
-        Opened opened = openForChange(viewer, id, SpaceRole.CONTRIBUTOR);
+        Opened opened = writable(openForChange(viewer, id, SpaceRole.CONTRIBUTOR));
         UUID folderId = move.folderId();
         if (folderId != null && !documents.folderOf(opened.space().id(), folderId)) {
             throw Checks.rejected("folderId", "unknown_folder");
@@ -297,6 +339,7 @@ public class Documents {
             throw ApiException.forbidden("maintainer_only");
         }
         List<String> contents = documents.contents(opened.row().id(), null);
+        locks.forDeletion(opened.row().id(), null);
         documents.delete(opened.row().id());
         spaces.touch(opened.space().id());
         audit.record(entry(viewer, opened, "document.deleted")
@@ -306,11 +349,14 @@ public class Documents {
         janitor.afterCommit(opened.space().organizationId(), contents);
     }
 
-    /** {@code 409 not_retryable} for a final failure, or a version that did not fail. */
+    /**
+     * A new attempt at the latest version, the current one or a newer one. {@code 409 not_retryable}
+     * for a final failure, or a version that did not fail.
+     */
     @Transactional
     DocumentView retry(Viewer viewer, UUID id) {
-        Opened opened = openForChange(viewer, id, SpaceRole.CONTRIBUTOR);
-        DocumentRepository.Version version = opened.row().version();
+        Opened opened = writable(openForChange(viewer, id, SpaceRole.CONTRIBUTOR));
+        DocumentRepository.Version version = latest(opened.row());
         if (!"FAILED".equals(version.extractionStatus()) || !PASSING_FAILURES.contains(version.extractionError())) {
             throw ApiException.conflict("not_retryable");
         }
@@ -324,10 +370,89 @@ public class Documents {
         return accessView(opened);
     }
 
+    /**
+     * Contributors move a document between Draft, Published and Obsolete; the maintainers of its
+     * space archive it and bring it back. Field errors {@code status:invalid_value},
+     * {@code replacedBy:unknown_document} (not found, or not readable by the person: the same answer),
+     * {@code replacedBy:not_replaceable} (the document itself, an obsolete or archived one);
+     * {@code 403 maintainer_only}.
+     */
+    @Transactional
+    DocumentView changeStatus(Viewer viewer, UUID id, StatusChange change) {
+        Opened opened = openForChange(viewer, id, SpaceRole.CONTRIBUTOR);
+        // The document, and the one that replaces it, locked and read again: the end of an
+        // extraction may change a status without the lock of the space.
+        java.util.Set<UUID> locked = new java.util.TreeSet<>();
+        locked.add(opened.row().id());
+        if (change.replacedBy() != null) {
+            locked.add(change.replacedBy());
+        }
+        Map<UUID, String> statuses = documents.lockStatuses(viewer.organizationId(), locked);
+        opened = reload(viewer, opened);
+        DocumentRepository.Row row = opened.row();
+        Status status = change.status() == null ? null
+                : Checks.start().oneOf("status", change.status().strip().toUpperCase(Locale.ROOT), Status.class);
+        if (status == null) {
+            throw Checks.rejected("status", "invalid_value");
+        }
+        String after = status.name();
+        if ((status == Status.ARCHIVED || row.archived()) && !after.equals(row.status())
+                && !access.canArchive(opened.role())) {
+            throw ApiException.forbidden("maintainer_only");
+        }
+        DocumentRepository.Row replacement = null;
+        if (status == Status.OBSOLETE && change.replacedBy() != null) {
+            if (change.replacedBy().equals(row.id())) {
+                throw Checks.rejected("replacedBy", "not_replaceable");
+            }
+            replacement = documents.findAll(opened.space().organizationId(), List.of(change.replacedBy()), readable(viewer))
+                    .stream().findFirst()
+                    .orElseThrow(() -> Checks.rejected("replacedBy", "unknown_document"));
+            String now = statuses.getOrDefault(replacement.id(), replacement.status());
+            if (Status.ARCHIVED.name().equals(now) || Status.OBSOLETE.name().equals(now)) {
+                throw Checks.rejected("replacedBy", "not_replaceable");
+            }
+        }
+        UUID replacedBy = replacement == null ? null : replacement.id();
+        // A replacement the person cannot read stays: they could neither see it nor mean to remove it.
+        if (status == Status.OBSOLETE && replacedBy == null && row.replacedById() != null
+                && replacedBy(viewer, row) == null) {
+            replacedBy = row.replacedById();
+        }
+        boolean changed = !after.equals(row.status());
+        if (!changed && Objects.equals(replacedBy, row.replacedById())) {
+            return view(viewer, opened, null);
+        }
+        documents.changeStatus(row.id(), after, replacedBy, changed);
+        spaces.touch(opened.space().id());
+        audit.record(entry(viewer, opened, "document.status_changed")
+                .detail("before", row.status())
+                .detail("after", after)
+                .detail("replacedBy", replacedBy)
+                .detail("replacedByTitle", replacement == null ? null : replacement.title())
+                .build());
+        return view(viewer, reload(viewer, opened), null);
+    }
+
+    /** The versions of a document, the latest first. */
+    PageResponse<DocumentViews.VersionView> versions(Viewer viewer, UUID id, PageQuery page) {
+        Opened opened = open(viewer, id);
+        List<DocumentRepository.Version> versions = documents.versions(opened.row().id(), page.offset(), page.size());
+        return new PageResponse<>(views.versions(opened.space().organizationId(), versions), page.page(), page.size(),
+                opened.row().versionCount());
+    }
+
+    /** One version of a document; {@code 404} for a number it does not have. */
+    DocumentViews.VersionView version(Viewer viewer, UUID id, int number) {
+        Opened opened = open(viewer, id);
+        DocumentRepository.Version version = documents.version(opened.row().id(), number).orElseThrow(ApiException::notFound);
+        return views.versions(opened.space().organizationId(), List.of(version)).getFirst();
+    }
+
     /** Field error {@code userIds:not_space_member}; {@code 403 maintainer_or_owner_only}. */
     @Transactional
     AccessView changeAccess(Viewer viewer, UUID id, AccessChange change) {
-        Opened opened = openForChange(viewer, id, SpaceRole.READER);
+        Opened opened = writable(openForChange(viewer, id, SpaceRole.READER));
         if (!access.canManageAccess(viewer, opened.ref(), opened.role())) {
             throw ApiException.forbidden("maintainer_or_owner_only");
         }
@@ -359,7 +484,7 @@ public class Documents {
      */
     @Transactional
     DocumentView changeOwner(Viewer viewer, UUID id, OwnerChange change) {
-        Opened opened = openForChange(viewer, id, SpaceRole.READER);
+        Opened opened = writable(openForChange(viewer, id, SpaceRole.READER));
         if (!access.canManageAccess(viewer, opened.ref(), opened.role())) {
             throw ApiException.forbidden("maintainer_or_owner_only");
         }
@@ -394,7 +519,7 @@ public class Documents {
         // Who hands over a restricted document they were not chosen for no longer sees it.
         Optional<SpaceRole> still = access.role(viewer, after.ref());
         if (still.isEmpty()) {
-            return views.view(after.space(), after.row(), DocumentActions.NONE, null);
+            return views.view(after.space(), after.row(), DocumentActions.NONE, null, null, null);
         }
         return view(viewer, new Opened(after.row(), after.space(), still.get()), null);
     }
@@ -443,17 +568,18 @@ public class Documents {
     }
 
     List<AttentionItem> attention(Viewer viewer) {
-        List<DocumentRepository.Row> rows = documents.attention(viewer.organizationId(), viewer.userId(), readable(viewer),
-                ATTENTION);
+        List<DocumentRepository.Attention> found = documents.attention(viewer.organizationId(), viewer.userId(),
+                readable(viewer), ATTENTION);
         Map<UUID, DocumentViews.SpaceLink> links = new LinkedHashMap<>();
         List<AttentionItem> items = new ArrayList<>();
-        for (DocumentRepository.Row row : rows) {
+        for (DocumentRepository.Attention item : found) {
+            DocumentRepository.Row row = item.document();
             DocumentViews.SpaceLink space = links.computeIfAbsent(row.spaceId(), spaceId -> {
-                Space found = spaces.find(viewer, spaceId);
-                return new DocumentViews.SpaceLink(found.id(), found.name(), found.slug(), found.color());
+                Space shown = spaces.find(viewer, spaceId);
+                return new DocumentViews.SpaceLink(shown.id(), shown.name(), shown.slug(), shown.color());
             });
-            items.add(new AttentionItem(row.id(), row.title(), space, row.version().extractionStatus(),
-                    row.version().extractionError()));
+            items.add(new AttentionItem(row.id(), row.title(), space, item.version().number(),
+                    item.version().extractionStatus(), item.version().extractionError()));
         }
         return items;
     }
@@ -465,18 +591,36 @@ public class Documents {
     }
 
     DocumentView view(Viewer viewer, Opened opened, DocumentViews.@Nullable DocumentLink duplicateOf) {
+        DocumentRepository.Row row = opened.row();
         boolean active = !opened.space().archived();
+        boolean writable = active && !row.archived();
         boolean contributor = opened.role().includes(SpaceRole.CONTRIBUTOR);
-        DocumentRepository.Version version = opened.row().version();
-        boolean manageAccess = active && access.canManageAccess(viewer, opened.ref(), opened.role());
+        DocumentRepository.Version newer = row.latestNumber() > row.version().number() ? documents.latest(row.id()) : null;
+        DocumentRepository.Version latest = newer == null ? row.version() : newer;
+        boolean manageAccess = writable && access.canManageAccess(viewer, opened.ref(), opened.role());
+        boolean archive = active && access.canArchive(opened.role());
         DocumentActions actions = new DocumentActions(
-                active && contributor,
+                writable && contributor,
                 active && access.canDelete(viewer, opened.ref(), opened.role()),
                 manageAccess,
-                active && contributor && "FAILED".equals(version.extractionStatus())
-                        && PASSING_FAILURES.contains(version.extractionError()),
-                manageAccess);
-        return views.view(opened.space(), opened.row(), actions, duplicateOf);
+                writable && contributor && "FAILED".equals(latest.extractionStatus())
+                        && PASSING_FAILURES.contains(latest.extractionError()),
+                manageAccess,
+                writable && contributor,
+                active && contributor && (!row.archived() || archive),
+                archive);
+        return views.view(opened.space(), row, actions, duplicateOf, replacedBy(viewer, row), newer);
+    }
+
+    /** The document that replaces an obsolete one, when the person may read it: nothing otherwise, not even its title. */
+    DocumentViews.@Nullable DocumentLink replacedBy(Viewer viewer, DocumentRepository.Row row) {
+        if (row.replacedById() == null) {
+            return null;
+        }
+        return documents.findAll(viewer.organizationId(), List.of(row.replacedById()), readable(viewer)).stream()
+                .findFirst()
+                .map(found -> new DocumentViews.DocumentLink(found.id(), found.title()))
+                .orElse(null);
     }
 
     /** A document, its space and the role of the person, once their right to see it is checked. */
@@ -484,7 +628,7 @@ public class Documents {
 
         DocumentRef ref() {
             return new DocumentRef(row.id(), space.ref(), row.ownerId(), row.createdBy(), row.restricted(),
-                    row.versionCount());
+                    row.versionCount(), row.archived());
         }
     }
 
@@ -496,8 +640,21 @@ public class Documents {
         return new Opened(row, space, role);
     }
 
+    /** The latest version of a document: the current one, or a newer one being extracted or failed. */
+    DocumentRepository.Version latest(DocumentRepository.Row row) {
+        return row.latestNumber() > row.version().number() ? documents.latest(row.id()) : row.version();
+    }
+
+    /** An archived document is read only: {@code 409 document_archived}, but for its status and its deletion. */
+    static Opened writable(Opened opened) {
+        if (opened.row().archived()) {
+            throw ApiException.conflict("document_archived");
+        }
+        return opened;
+    }
+
     /** As {@link #open}, the space locked until the end of the transaction, and active. */
-    private Opened openForChange(Viewer viewer, UUID id, SpaceRole minimum) {
+    Opened openForChange(Viewer viewer, UUID id, SpaceRole minimum) {
         DocumentRepository.Row row = documents.find(viewer.organizationId(), id).orElseThrow(ApiException::notFound);
         Space space = spaces.openForChange(viewer, row.spaceId(), SpaceRole.READER).space();
         // Read again under the lock of the space, which a deletion or a move would have waited for.
@@ -508,7 +665,7 @@ public class Documents {
         return new Opened(row, space, role);
     }
 
-    private Opened reload(Viewer viewer, Opened opened) {
+    Opened reload(Viewer viewer, Opened opened) {
         DocumentRepository.Row row = documents.find(viewer.organizationId(), opened.row().id()).orElseThrow(ApiException::notFound);
         return new Opened(row, opened.space(), opened.role());
     }

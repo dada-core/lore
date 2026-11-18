@@ -3,11 +3,12 @@ import { Link } from 'react-router';
 import { api, call, type Schemas } from '../api/client';
 import { keys } from '../api/queryClient';
 import { failureCause, StatusLabel, useOpenImport, whileExtracting } from '../documents/documents';
+import { homeSentence } from '../documents/History';
 import { useI18n } from '../i18n/i18n';
 import { View } from '../layouts/AppShell';
 import { useUser } from '../session/session';
 import { canContribute, SpaceIcon, useCreateSpace, useSpaces, type SpaceRole } from '../spaces/spaces';
-import { useDocumentTitle } from '../ui/bits';
+import { Avatar, useDocumentTitle } from '../ui/bits';
 import { Icon, Spinner, type IconName } from '../ui/Icon';
 
 type AttentionItem = Schemas['AttentionItem'];
@@ -57,6 +58,7 @@ export function HomePage() {
               <p className="page-intro">{today.charAt(0).toUpperCase() + today.slice(1)}</p>
             </div>
             <Resume />
+            <RecentActivity />
             <section aria-labelledby="home-spaces">
               <div className="row-between">
                 <h2 className="section-title" id="home-spaces">{t('home.spaces')}</h2>
@@ -152,6 +154,37 @@ function Resume() {
 }
 
 /**
+ * The latest imports, new versions and changes of status of the documents the person sees,
+ * archived ones left out: what moved in their spaces.
+ */
+function RecentActivity() {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const activity = useQuery({
+    queryKey: keys.homeActivity,
+    queryFn: () => call(() => api.GET('/api/v1/activity')),
+  });
+  if (!activity.data || activity.data.length === 0) return null;
+  return (
+    <section className="activity home-activity" aria-labelledby="home-activity">
+      <h2 className="section-title" id="home-activity">{t('home.activity')}</h2>
+      <ol>
+        {activity.data.map((item) => (
+          <li key={item.id}>
+            <Avatar name={item.actor ? item.actor.displayName ?? t('activity.someone') : t('activity.system')} seed={item.actor?.id} />
+            <span>
+              {homeSentence(i18n, item)}
+              <span className="muted">, {item.space.name}</span>
+              <time dateTime={item.occurredAt}>{i18n.relative(item.occurredAt)}</time>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/**
  * To do: the documents the person imported whose import failed, and those still being indexed.
  * Asked again every ten seconds while one is in progress.
  */
@@ -178,7 +211,7 @@ function Attention() {
         {items.map((item) => (
           <li key={item.id}>
             <Link to={`/documents/${item.id}`}>
-              <span>{item.title}</span>
+              <span>{item.title}{item.version > 1 && <>, {t('versions.other', { number: item.version })}</>}</span>
               <span className="muted">
                 {item.space.name}
                 {failure && <>, {failureCause(i18n, item.extractionError)}</>}

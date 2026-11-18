@@ -17,6 +17,7 @@ import com.dadacore.lore.audit.AuditEntry;
 import com.dadacore.lore.audit.AuditLog;
 import com.dadacore.lore.identity.Viewer;
 import com.dadacore.lore.library.documents.DocumentCounts;
+import com.dadacore.lore.library.documents.DocumentLocks;
 import com.dadacore.lore.library.documents.FileJanitor;
 import com.dadacore.lore.shared.ApiException;
 import com.dadacore.lore.shared.Checks;
@@ -48,15 +49,17 @@ public class Spaces {
     private final SpaceMembers members;
     private final DocumentCounts documents;
     private final FileJanitor files;
+    private final DocumentLocks locks;
     private final AuditLog audit;
 
     Spaces(SpaceRepository repository, SpaceAccess access, SpaceMembers members, DocumentCounts documents,
-            FileJanitor files, AuditLog audit) {
+            FileJanitor files, DocumentLocks locks, AuditLog audit) {
         this.repository = repository;
         this.access = access;
         this.members = members;
         this.documents = documents;
         this.files = files;
+        this.locks = locks;
         this.audit = audit;
     }
 
@@ -261,8 +264,9 @@ public class Spaces {
     @Transactional
     void delete(Viewer viewer, UUID id) {
         Space space = openForChange(viewer, id, SpaceRole.MAINTAINER).space();
-        long documentCount = documents.counts(viewer, List.of(space.id())).getOrDefault(space.id(), 0L);
+        long documentCount = documents.all(space.id());
         List<String> contents = files.contentsOfSpace(space.id());
+        locks.forDeletion(null, space.id());
         repository.delete(space.id());
         audit.record(AuditEntry.of(space.organizationId(), viewer.userId(), "space.deleted")
                 .resource("space", space.id())

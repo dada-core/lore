@@ -30,17 +30,37 @@ import tools.jackson.databind.json.JsonMapper;
 @Repository
 class DocumentRepository {
 
-    /** A document, with its current version. */
+    /**
+     * A document, with its current version.
+     *
+     * @param statusChangedAt since when it has its status
+     * @param replacedById    for an obsolete document, the one that replaces it, whoever may read it
+     * @param latestNumber    the number of its latest version, above the current one while a new
+     *                        version is extracted or after it failed
+     */
     record Row(UUID id, UUID spaceId, @Nullable UUID folderId, String title, @Nullable String description,
             @Nullable String category, String status, boolean restricted, @Nullable UUID ownerId,
-            @Nullable UUID createdBy, Instant createdAt, Instant updatedAt, int versionCount, Version version) {
+            @Nullable UUID createdBy, Instant createdAt, Instant updatedAt, int versionCount, Version version,
+            Instant statusChangedAt, @Nullable UUID replacedById, int latestNumber) {
+
+        boolean archived() {
+            return "ARCHIVED".equals(status);
+        }
     }
 
-    /** A version of a document. */
+    /**
+     * A version of a document.
+     *
+     * @param note           what changes, written at its import; none for the first version
+     * @param changeRatio    the share of passages changed from the version before, from 0 to 1; null
+     *                       when unknown
+     * @param languageChosen its language was chosen by a person, and is kept when it is extracted again
+     */
     record Version(UUID id, int number, String sha256, String filename, String mediaType, long sizeBytes,
             @Nullable UUID authorId, Instant createdAt, String extractionStatus, @Nullable String extractionError,
             @Nullable Instant extractedAt, @Nullable String language, @Nullable Integer pageCount,
-            @Nullable Integer sectionCount, boolean textTruncated) {
+            @Nullable Integer sectionCount, boolean textTruncated, @Nullable String note, @Nullable Float changeRatio,
+            boolean languageChosen) {
     }
 
     /** What a new document needs. */
@@ -48,21 +68,30 @@ class DocumentRepository {
             String status, boolean restricted, UUID createdBy) {
     }
 
-    /** Counts of the documents a person can see in a space. */
-    record Summary(long total, long inProgress, long scanned, long failed, List<FolderCount> folders) {
+    /**
+     * Counts of the documents a person can see in a space; the archived ones apart, counted nowhere
+     * else.
+     */
+    record Summary(long total, long inProgress, long scanned, long failed, long archived, List<FolderCount> folders) {
     }
 
     /** {@code folderId} null: at the root of the space. */
     record FolderCount(@Nullable UUID folderId, long count) {
     }
 
+    /** The columns of a version, as {@link #version(ResultSet)} reads them. */
+    private static final String VERSION_COLUMNS = """
+            v.id as version_id, v.number, v.sha256, v.filename, v.media_type, v.size_bytes, v.author_id,
+                v.created_at as version_created_at, v.extraction_status, v.extraction_error, v.extracted_at,
+                v.language, v.page_count, v.section_count, v.text_truncated, v.note, v.change_ratio, v.language_chosen""";
+
     private static final String COLUMNS = """
             select d.id, d.space_id, d.folder_id, d.title, d.description, d.category, d.status, d.restricted,
-                d.owner_id, d.created_by, d.created_at, d.updated_at,
+                d.owner_id, d.created_by, d.created_at, d.updated_at, d.status_changed_at, d.replaced_by_id,
                 (select count(*) from document_version c where c.document_id = d.id) as version_count,
-                v.id as version_id, v.number, v.sha256, v.filename, v.media_type, v.size_bytes, v.author_id,
-                v.created_at as version_created_at, v.extraction_status, v.extraction_error, v.extracted_at,
-                v.language, v.page_count, v.section_count, v.text_truncated
+                (select max(c.number) from document_version c where c.document_id = d.id) as latest_number,
+                """ + VERSION_COLUMNS + """
+
             from document d
             join space s on s.id = d.space_id
             join document_version v on v.id = d.current_version_id
@@ -128,8 +157,13 @@ class DocumentRepository {
         }
     }
 
-    /** Which documents a list shows. */
-    record Filter(@Nullable UUID folderId, boolean rootOnly, @Nullable Boolean restricted, List<UUID> ids) {
+    /**
+     * Which documents a list shows.
+     *
+     * @param statuses the statuses shown; none: all but Archived, which a list shows only when asked
+     */
+    record Filter(@Nullable UUID folderId, boolean rootOnly, @Nullable Boolean restricted, List<UUID> ids,
+            List<String> statuses) {
     }
 
     private static String where(UUID spaceId, SqlCondition readable, Filter filter, List<Object> params) {
@@ -150,6 +184,12 @@ class DocumentRepository {
             where.append(" and d.id in (").append(String.join(", ", Collections.nCopies(filter.ids().size(), "?"))).append(')');
             params.addAll(filter.ids());
         }
+        if (filter.statuses().isEmpty()) {
+            where.append(" and d.status <> 'ARCHIVED'");
+        } else {
+            where.append(" and d.status = any(?)");
+            params.add(filter.statuses().toArray(String[]::new));
+        }
         return where.toString();
     }
 
@@ -159,26 +199,34 @@ class DocumentRepository {
         params.addAll(readable.params());
         String from = " from document d join space s on s.id = d.space_id join document_version v on v.id = d.current_version_id"
                 + " where d.space_id = ? and (" + readable.sql() + ")";
-        long[] totals = new long[4];
-        jdbc.sql("select count(*) as total,"
-                        + " count(*) filter (where v.extraction_status = 'PENDING') as in_progress,"
-                        + " count(*) filter (where v.extraction_status = 'SCANNED') as scanned,"
-                        + " count(*) filter (where v.extraction_status = 'FAILED') as failed" + from)
+        long[] totals = new long[5];
+        jdbc.sql("select count(*) filter (where d.status <> 'ARCHIVED') as total,"
+                        + " count(*) filter (where d.status <> 'ARCHIVED' and v.extraction_status = 'PENDING') as in_progress,"
+                        + " count(*) filter (where d.status <> 'ARCHIVED' and v.extraction_status = 'SCANNED') as scanned,"
+                        + " count(*) filter (where d.status <> 'ARCHIVED' and v.extraction_status = 'FAILED') as failed,"
+                        + " count(*) filter (where d.status = 'ARCHIVED') as archived" + from)
                 .params(params)
                 .query(rs -> {
                     totals[0] = rs.getLong("total");
                     totals[1] = rs.getLong("in_progress");
                     totals[2] = rs.getLong("scanned");
                     totals[3] = rs.getLong("failed");
+                    totals[4] = rs.getLong("archived");
                 });
-        List<FolderCount> folders = jdbc.sql("select d.folder_id, count(*) as documents" + from + " group by d.folder_id")
+        List<FolderCount> folders = jdbc.sql("select d.folder_id, count(*) as documents" + from
+                        + " and d.status <> 'ARCHIVED' group by d.folder_id")
                 .params(params)
                 .query((rs, row) -> new FolderCount(rs.getObject("folder_id", UUID.class), rs.getLong("documents")))
                 .list();
-        return new Summary(totals[0], totals[1], totals[2], totals[3], folders);
+        return new Summary(totals[0], totals[1], totals[2], totals[3], totals[4], folders);
     }
 
-    /** The number of documents the condition allows in each space. */
+    /** Every document of a space. */
+    long countAll(UUID spaceId) {
+        return jdbc.sql("select count(*) from document where space_id = ?").param(spaceId).query(Long.class).single();
+    }
+
+    /** The number of documents the condition allows in each space, the archived ones left out. */
     Map<UUID, Long> countBySpace(Collection<UUID> spaceIds, SqlCondition readable) {
         Map<UUID, Long> counts = new HashMap<>();
         if (spaceIds.isEmpty()) {
@@ -188,7 +236,7 @@ class DocumentRepository {
         params.addAll(readable.params());
         jdbc.sql("select d.space_id, count(*) as documents from document d join space s on s.id = d.space_id"
                         + " where d.space_id in (" + String.join(", ", Collections.nCopies(spaceIds.size(), "?")) + ")"
-                        + " and (" + readable.sql() + ") group by d.space_id")
+                        + " and (" + readable.sql() + ") and d.status <> 'ARCHIVED' group by d.space_id")
                 .params(params)
                 .query(rs -> {
                     counts.put(rs.getObject("space_id", UUID.class), rs.getLong("documents"));
@@ -212,18 +260,36 @@ class DocumentRepository {
                 .list();
     }
 
-    /** The documents of the organization imported by the person, still extracting or failed. */
-    List<Row> attention(UUID organizationId, UUID userId, SqlCondition readable, int limit) {
+    /** A version that needs the attention of who imported it, and its document. */
+    record Attention(Row document, Version version) {
+    }
+
+    /**
+     * The versions the person imported, still extracting or failed, as long as no later version has
+     * become current: a first import, or a new version.
+     */
+    List<Attention> attention(UUID organizationId, UUID userId, SqlCondition readable, int limit) {
         List<Object> params = new ArrayList<>();
         params.add(organizationId);
         params.add(userId);
         params.addAll(readable.params());
         params.add(limit);
-        return jdbc.sql(COLUMNS + " where s.organization_id = ? and d.created_by = ? and (" + readable.sql() + ")"
-                        + " and v.extraction_status in ('PENDING', 'FAILED') order by v.created_at desc limit ?")
+        List<Attention> attention = new ArrayList<>();
+        jdbc.sql("""
+                select d.id as document_id, a.id as version_id from document d
+                join space s on s.id = d.space_id
+                join document_version c on c.id = d.current_version_id
+                join document_version a on a.document_id = d.id and a.number >= c.number
+                where s.organization_id = ? and a.author_id = ? and (%s) and d.status <> 'ARCHIVED'
+                  and a.extraction_status in ('PENDING', 'FAILED')
+                order by a.created_at desc limit ?
+                """.formatted(readable.sql()))
                 .params(params)
-                .query(DocumentRepository::row)
-                .list();
+                .query((rs, row) -> List.of(rs.getObject("document_id", UUID.class), rs.getObject("version_id", UUID.class)))
+                .list()
+                .forEach(ids -> find(organizationId, ids.get(0)).ifPresent(document ->
+                        version(ids.get(1)).ifPresent(version -> attention.add(new Attention(document, version)))));
+        return attention;
     }
 
     /** A document of the space, other than {@code except}, whose current file has this content. */
@@ -252,6 +318,7 @@ class DocumentRepository {
                 .single();
     }
 
+    /** The first version of a new document, current at once (decision 16 of the import). */
     UUID insertVersion(UUID documentId, int number, String sha256, String filename, String mediaType, long size,
             UUID authorId) {
         UUID versionId = jdbc.sql("""
@@ -266,6 +333,84 @@ class DocumentRepository {
                 .params(versionId, documentId)
                 .update();
         return versionId;
+    }
+
+    /** What a new version of a document needs. */
+    record NewVersion(UUID documentId, int number, String sha256, String filename, String mediaType, long size,
+            UUID authorId, @Nullable String note, @Nullable String statusWhenCurrent, @Nullable String chosenLanguage) {
+    }
+
+    /**
+     * A new version, which becomes current only once its text is extracted. A language chosen by a
+     * person on the current version is taken again, still chosen.
+     */
+    UUID insertNewVersion(NewVersion version) {
+        return jdbc.sql("""
+                insert into document_version (document_id, number, sha256, filename, media_type, size_bytes, author_id,
+                    note, status_when_current, language, language_chosen, created_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, clock_timestamp())
+                returning id
+                """)
+                .params(version.documentId(), version.number(), version.sha256(), version.filename(), version.mediaType(),
+                        version.size(), version.authorId(), version.note(), version.statusWhenCurrent(),
+                        version.chosenLanguage(), version.chosenLanguage() != null)
+                .query(UUID.class)
+                .single();
+    }
+
+    /** The number the next version of a document takes: the largest plus one. */
+    int nextNumber(UUID documentId) {
+        return jdbc.sql("select coalesce(max(number), 0) + 1 from document_version where document_id = ?")
+                .param(documentId)
+                .query(Integer.class)
+                .single();
+    }
+
+    /** The latest version of a document, current or not. */
+    Version latest(UUID documentId) {
+        return jdbc.sql("select " + VERSION_COLUMNS + " from document_version v where v.document_id = ?"
+                        + " order by v.number desc limit 1")
+                .param(documentId)
+                .query((rs, row) -> version(rs))
+                .single();
+    }
+
+    /** The versions of a document, the latest first. */
+    List<Version> versions(UUID documentId, long offset, int limit) {
+        return jdbc.sql("select " + VERSION_COLUMNS + " from document_version v where v.document_id = ?"
+                        + " order by v.number desc limit ? offset ?")
+                .params(documentId, limit, offset)
+                .query((rs, row) -> version(rs))
+                .list();
+    }
+
+    /**
+     * Locks these documents, in the order of their identifiers, before a change of status: one that
+     * replaces the other cannot change or go meanwhile. Returns their status, for those that exist.
+     */
+    java.util.Map<UUID, String> lockStatuses(UUID organizationId, Collection<UUID> ids) {
+        java.util.Map<UUID, String> statuses = new HashMap<>();
+        jdbc.sql("""
+                select d.id, d.status from document d
+                where d.id = any(?) and d.space_id in (select s.id from space s where s.organization_id = ?)
+                order by d.id for no key update of d
+                """)
+                .params(ids.toArray(UUID[]::new), organizationId)
+                .query(rs -> {
+                    statuses.put(rs.getObject("id", UUID.class), rs.getString("status"));
+                });
+        return statuses;
+    }
+
+    /** The status of a document, and the one that replaces it while obsolete. */
+    void changeStatus(UUID id, String status, @Nullable UUID replacedById, boolean statusChanged) {
+        jdbc.sql("""
+                update document set status = ?, replaced_by_id = ?, updated_at = now(),
+                    status_changed_at = case when ? then clock_timestamp() else status_changed_at end
+                where id = ?
+                """)
+                .params(status, replacedById, statusChanged, id)
+                .update();
     }
 
     void update(UUID id, String title, @Nullable String description, @Nullable String category) {
@@ -382,12 +527,7 @@ class DocumentRepository {
     // The outcome of an extraction.
 
     Optional<Version> version(UUID versionId) {
-        return jdbc.sql("""
-                select v.id as version_id, v.number, v.sha256, v.filename, v.media_type, v.size_bytes, v.author_id,
-                    v.created_at as version_created_at, v.extraction_status, v.extraction_error, v.extracted_at,
-                    v.language, v.page_count, v.section_count, v.text_truncated, v.document_id
-                from document_version v where v.id = ?
-                """)
+        return jdbc.sql("select " + VERSION_COLUMNS + " from document_version v where v.id = ?")
                 .param(versionId)
                 .query((rs, row) -> version(rs))
                 .optional();
@@ -395,15 +535,93 @@ class DocumentRepository {
 
     /** A version of a document by its number. */
     Optional<Version> version(UUID documentId, int number) {
-        return jdbc.sql("""
-                select v.id as version_id, v.number, v.sha256, v.filename, v.media_type, v.size_bytes, v.author_id,
-                    v.created_at as version_created_at, v.extraction_status, v.extraction_error, v.extracted_at,
-                    v.language, v.page_count, v.section_count, v.text_truncated
-                from document_version v where v.document_id = ? and v.number = ?
-                """)
+        return jdbc.sql("select " + VERSION_COLUMNS + " from document_version v where v.document_id = ? and v.number = ?")
                 .params(documentId, number)
                 .query((rs, row) -> version(rs))
                 .optional();
+    }
+
+    /**
+     * A version whose extraction ended, its document, and what it asked for: its current version
+     * locked, so that two versions that end at once become current one after the other.
+     *
+     * @param statusChangedSince the status of the document changed after the version was imported
+     */
+    record Ended(UUID documentId, UUID currentVersionId, int currentNumber, String status, @Nullable String statusWhenCurrent,
+            boolean statusChangedSince, UUID organizationId, UUID spaceId, String spaceName, String title) {
+    }
+
+    Optional<Ended> ended(UUID versionId) {
+        // Locked alone, then read: joined to its current version, a document changed meanwhile by
+        // another version that became current would be checked again with the former one, and lost.
+        Optional<UUID> documentId = jdbc.sql("""
+                select d.id from document d
+                where d.id = (select v.document_id from document_version v where v.id = ?)
+                for no key update
+                """)
+                .param(versionId)
+                .query(UUID.class)
+                .optional();
+        if (documentId.isEmpty()) {
+            return Optional.empty();
+        }
+        return jdbc.sql("""
+                select d.id, d.current_version_id, c.number, d.status, v.status_when_current,
+                    d.status_changed_at > v.created_at as changed_since, s.organization_id, s.id as space_id,
+                    s.name as space_name, d.title
+                from document d
+                join space s on s.id = d.space_id
+                join document_version c on c.id = d.current_version_id
+                join document_version v on v.id = ? and v.document_id = d.id
+                where d.id = ?
+                """)
+                .params(versionId, documentId.get())
+                .query((rs, row) -> new Ended(rs.getObject("id", UUID.class), rs.getObject("current_version_id", UUID.class),
+                        rs.getInt("number"), rs.getString("status"), rs.getString("status_when_current"),
+                        rs.getBoolean("changed_since"), rs.getObject("organization_id", UUID.class),
+                        rs.getObject("space_id", UUID.class), rs.getString("space_name"), rs.getString("title")))
+                .optional();
+    }
+
+    /**
+     * The share of passages changed from one version to the next, by the fingerprints of their texts:
+     * those added and removed over those of both. Null when either has no passage (a scan).
+     */
+    @Nullable
+    Float changeRatio(UUID before, UUID after) {
+        return jdbc.sql("""
+                with a as (select md5(content) as h, count(*) as n from chunk where version_id = ? group by 1),
+                     b as (select md5(content) as h, count(*) as n from chunk where version_id = ? group by 1)
+                select case when (select count(*) from a) = 0 or (select count(*) from b) = 0 then null
+                    else (sum(abs(coalesce(a.n, 0) - coalesce(b.n, 0))) / sum(coalesce(a.n, 0) + coalesce(b.n, 0)))::real end
+                from a full join b using (h)
+                """)
+                .params(before, after)
+                .query((rs, row) -> (Float) rs.getObject(1, Float.class))
+                .optional()
+                .orElse(null);
+    }
+
+    /** The version becomes the current one of its document, which is indexed in its language. */
+    void makeCurrent(UUID documentId, UUID versionId) {
+        jdbc.sql("""
+                update document d set current_version_id = v.id, search_language = v.language, updated_at = now()
+                from document_version v where v.id = ? and d.id = ?
+                """)
+                .params(versionId, documentId)
+                .update();
+    }
+
+    void changeRatio(UUID versionId, @Nullable Float ratio) {
+        jdbc.sql("update document_version set change_ratio = ? where id = ?").params(ratio, versionId).update();
+    }
+
+    /**
+     * The passages of a version no longer current: nothing reads them, the search looks in the
+     * current version only. Its rendering and its file stay.
+     */
+    void deleteChunks(UUID versionId) {
+        jdbc.sql("delete from chunk where version_id = ?").param(versionId).update();
     }
 
     /**
@@ -573,7 +791,10 @@ class DocumentRepository {
                 instant(rs.getTimestamp("created_at")),
                 instant(rs.getTimestamp("updated_at")),
                 rs.getInt("version_count"),
-                version(rs));
+                version(rs),
+                instant(rs.getTimestamp("status_changed_at")),
+                rs.getObject("replaced_by_id", UUID.class),
+                rs.getInt("latest_number"));
     }
 
     private static Version version(ResultSet rs) throws SQLException {
@@ -592,7 +813,10 @@ class DocumentRepository {
                 rs.getString("language"),
                 (Integer) rs.getObject("page_count"),
                 (Integer) rs.getObject("section_count"),
-                rs.getBoolean("text_truncated"));
+                rs.getBoolean("text_truncated"),
+                rs.getString("note"),
+                rs.getObject("change_ratio", Float.class),
+                rs.getBoolean("language_chosen"));
     }
 
     private static Instant instant(@Nullable Timestamp timestamp) {

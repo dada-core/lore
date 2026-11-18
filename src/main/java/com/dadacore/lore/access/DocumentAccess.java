@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
  *   <li>A document is seen by those who see its space (see {@link SpaceAccess}).</li>
  *   <li>A restricted document is seen only by the people chosen, the maintainers of the space,
  *       the person in charge of the document, and the owners and administrators.</li>
+ *   <li>An archived document is seen only by the maintainers of the space, and the owners and
+ *       administrators: as an archived space, even by the person in charge of it.</li>
  *   <li>What one may do follows the role in the space; the person in charge of a document may
  *       also restrict it or open it again, and the person who imported it may delete it while
  *       it has only one version.</li>
@@ -37,6 +39,9 @@ public class DocumentAccess {
     /** The role of the person in the space of the document, empty when they cannot see it. */
     public Optional<SpaceRole> role(Viewer viewer, DocumentRef document) {
         Optional<SpaceRole> role = spaces.role(viewer, document.space());
+        if (role.isPresent() && document.archived() && role.get() != SpaceRole.MAINTAINER) {
+            return Optional.empty();
+        }
         if (role.isEmpty() || !document.restricted() || role.get() == SpaceRole.MAINTAINER
                 || viewer.userId().equals(document.ownerId())) {
             return role;
@@ -66,6 +71,11 @@ public class DocumentAccess {
                 || (role.includes(SpaceRole.CONTRIBUTOR) && viewer.userId().equals(document.ownerId()));
     }
 
+    /** True when the person may archive the document or bring it back: a maintainer of its space. */
+    public boolean canArchive(SpaceRole role) {
+        return role == SpaceRole.MAINTAINER;
+    }
+
     /** True when the person may delete the document: a maintainer, or who imported its only version. */
     public boolean canDelete(Viewer viewer, DocumentRef document, SpaceRole role) {
         return role == SpaceRole.MAINTAINER
@@ -88,6 +98,7 @@ public class DocumentAccess {
         }
         String sql = "exists (select 1 from space_member sm where sm.space_id = " + document + ".space_id"
                 + " and sm.user_id = ? and (" + space + ".archived_at is null or sm.role = 'MAINTAINER')"
+                + " and (" + document + ".status <> 'ARCHIVED' or sm.role = 'MAINTAINER')"
                 + " and (not " + document + ".restricted or sm.role = 'MAINTAINER' or " + document + ".owner_id = ?"
                 + " or exists (select 1 from document_grant g where g.document_id = " + document + ".id and g.user_id = ?)))";
         return new SqlCondition(sql, List.of(viewer.userId(), viewer.userId(), viewer.userId()));

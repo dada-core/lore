@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import com.dadacore.lore.identity.OrganizationMember;
 import com.dadacore.lore.identity.OrganizationMembers;
+import com.dadacore.lore.identity.Person;
 import org.springframework.stereotype.Component;
 
 /** The members of an organization, as the other modules see them. */
@@ -38,6 +39,13 @@ class MembershipDirectory implements OrganizationMembers {
         return memberships.activeMembers(organizationId, search, excluded, limit).stream()
                 .map(MembershipDirectory::member)
                 .toList();
+    }
+
+    @Override
+    public Map<UUID, Person> accounts(Collection<UUID> userIds) {
+        Map<UUID, Person> people = new LinkedHashMap<>();
+        memberships.accounts(userIds).forEach(person -> people.put(person.id(), person));
+        return people;
     }
 
     private static OrganizationMember member(MemberRow row) {

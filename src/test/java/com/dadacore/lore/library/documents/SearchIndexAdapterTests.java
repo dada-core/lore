@@ -22,4 +22,13 @@ class SearchIndexAdapterTests {
         assertThat(SearchIndexAdapter.widened("'10.0.3.18' & 'c:\\\\windows' & 'node-01'"))
                 .isEqualTo("'10.0.3.18' & 'c:\\\\windows' & 'node-01'");
     }
+
+    @Test
+    void thePassagesFoundAreAskedWithoutPhrasesWhichTheIndexCannotCheck() {
+        assertThat(SearchIndexAdapter.noPhrase("'pg' <-> 'resto':* | 'error':*")).isEqualTo("'pg' & 'resto':* | 'error':*");
+        assertThat(SearchIndexAdapter.noPhrase("'base' <2> 'donne':*")).isEqualTo("'base' & 'donne':*");
+        // What looks like an operator inside a lexeme is the lexeme.
+        assertThat(SearchIndexAdapter.noPhrase("'a<->b' & 'l''<2>'")).isEqualTo("'a<->b' & 'l''<2>'");
+        assertThat(SearchIndexAdapter.noPhrase("'c:\\\\x' <-> 'y'")).isEqualTo("'c:\\\\x' & 'y'");
+    }
 }

@@ -1,9 +1,10 @@
 #!/bin/sh
 # Imports a small PDF and a Markdown file into a fresh installation of Lore, waits until their
-# text is extracted, then downloads the PDF, reads the rendering of the Markdown and searches it. It
-# proves that the extraction process starts with the Java of the installation (the packages bundle a
-# reduced Java runtime, which must hold what Apache Tika needs), that the reader serves both, and
-# that the search of PostgreSQL finds them (its configurations come with every installation).
+# text is extracted, then downloads the PDF, reads the rendering of the Markdown, searches it and
+# imports a version 2 of it. It proves that the extraction process starts with the Java of the
+# installation (the packages bundle a reduced Java runtime, which must hold what Apache Tika needs),
+# that the reader serves both, that the search of PostgreSQL finds them (its configurations come
+# with every installation), and that a new version takes the place of the previous one.
 #   sh packaging/import-check.sh <log of Lore, which holds the setup code> [address of Lore]
 set -eu
 
@@ -109,3 +110,26 @@ curl -fsS -b "$jar" -o "$work/search.json" "$base/api/v1/search?q=pg_restore" ||
 grep -qF "\"id\":\"$markdown\"" "$work/search.json" || fail "the search does not find the Markdown file: $(cat "$work/search.json")"
 grep -qF '"anchor":"h-' "$work/search.json" || fail "no passage in the search: $(cat "$work/search.json")"
 echo "import check: the search finds the Markdown file at its passage"
+
+# A version 2 of the Markdown file: current once its text is extracted, the search follows it, and
+# version 1 stays in the history, its file downloaded as it was.
+printf '# Restore a database\n\nRun `pg_restore` with `--no-owner` from the last backup.\n\n## Checks\n\nCompare the counts of rows.\n' \
+  > "$work/restore-2.md"
+curl -fsS -b "$jar" -c "$jar" -H "X-XSRF-TOKEN: $(token)" -F "file=@$work/restore-2.md;type=text/markdown" \
+  -F "note=Checks added" "$base/api/v1/documents/$markdown/versions" >/dev/null || fail "import of a version 2"
+elapsed=0
+while :; do
+  current=$(curl -fsS -b "$jar" "$base/api/v1/documents/$markdown" \
+    | grep -o '"currentVersion":{"id":"[0-9a-f-]*","number":[0-9]*' | grep -o '[0-9]*$')
+  [ "$current" = "2" ] && break
+  [ "$elapsed" -lt 120 ] || fail "version 2 still not current after 120 s: $(curl -fsS -b "$jar" "$base/api/v1/documents/$markdown")"
+  sleep 2
+  elapsed=$((elapsed + 2))
+done
+curl -fsS -b "$jar" -o "$work/new.json" "$base/api/v1/search?q=rows" || fail "search of a new word"
+grep -qF "\"id\":\"$markdown\"" "$work/new.json" || fail "the search does not find a word of version 2: $(cat "$work/new.json")"
+curl -fsS -b "$jar" -o "$work/old.json" "$base/api/v1/search?q=frequent" || fail "search of a word removed"
+grep -qF '"total":0' "$work/old.json" || fail "the search still finds a word of version 1 only: $(cat "$work/old.json")"
+curl -fsS -b "$jar" -o "$work/version-1.md" "$base/api/v1/documents/$markdown/versions/1/file" || fail "download of version 1"
+[ "$(sha256sum < "$work/restore.md")" = "$(sha256sum < "$work/version-1.md")" ] || fail "version 1 downloaded differs from its file"
+echo "import check: a version 2 became current in about $elapsed s, version 1 kept"

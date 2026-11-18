@@ -39,10 +39,14 @@ final class SearchViews {
             @Nullable Excerpt description, List<String> words, OtherPassages otherPassages) {
     }
 
-    /** @param titleHighlights the words found in the title, as {@code [start, end[} in UTF-16 units */
+    /**
+     * @param titleHighlights the words found in the title, as {@code [start, end[} in UTF-16 units
+     * @param replacedBy      for an obsolete document, the one that replaces it, when the person may read it
+     */
     record ResultDocument(UUID id, String title, List<List<Integer>> titleHighlights, String status,
             @Nullable String category, String mediaType, @Nullable String language, boolean restricted,
-            String extractionStatus, Instant updatedAt, SearchIndex.Place space, SearchIndex.@Nullable Folder folder) {
+            String extractionStatus, Instant updatedAt, SearchIndex.Place space, SearchIndex.@Nullable Folder folder,
+            SearchIndex.@Nullable DocumentRef replacedBy) {
     }
 
     /**
@@ -88,7 +92,8 @@ final class SearchViews {
             items.add(new Result(
                     new ResultDocument(document.id(), title.text(), title.highlights(), document.status(),
                             document.category(), document.mediaType(), document.language(), document.restricted(),
-                            document.extractionStatus(), document.updatedAt(), document.space(), document.folder()),
+                            document.extractionStatus(), document.updatedAt(), document.space(), document.folder(),
+                            document.replacedBy()),
                     document.version(), document.match(), passage, description,
                     Searches.words(title.words(), excerptWords),
                     new OtherPassages(document.otherPassageCount(), document.otherPassages())));

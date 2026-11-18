@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.dadacore.lore.identity.OrganizationRole;
+import com.dadacore.lore.identity.Person;
 import com.dadacore.lore.shared.PageQuery;
 import com.dadacore.lore.shared.PageResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -76,6 +77,18 @@ public class MembershipRepository {
                 .params(organizationId, userId)
                 .query(MembershipRepository::member)
                 .optional();
+    }
+
+    /** These accounts, whatever their organizations. */
+    public List<Person> accounts(Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("select id, display_name, email from user_account where id in (" + placeholders(userIds.size()) + ")")
+                .params(new ArrayList<>(userIds))
+                .query((rs, row) -> new Person(rs.getObject("id", UUID.class), rs.getString("display_name"),
+                        rs.getString("email")))
+                .list();
     }
 
     public List<MemberRow> members(UUID organizationId, Collection<UUID> userIds) {

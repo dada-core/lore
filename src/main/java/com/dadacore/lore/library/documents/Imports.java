@@ -33,7 +33,7 @@ import org.springframework.util.unit.DataSize;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /**
- * The import of one file, in this order:
+ * The import of one file, as a new document or as a new version of one, in this order:
  *
  * <ol>
  *   <li>before the body is read: the space ({@code 404}), the role ({@code 403 contributor_only}),
@@ -46,6 +46,10 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
  *   <li>after it: the workers are woken up, or the file is deleted if the import was cancelled
  *       and nothing else uses it.</li>
  * </ol>
+ *
+ * <p>A new version is checked the same way, on its document: contributors only, an active space, a
+ * document that is not archived ({@code 409 document_archived}), a file that differs from the latest
+ * version ({@code 409 same_content}). It becomes current once its text is extracted.
  */
 @Service
 class Imports {
@@ -79,9 +83,26 @@ class Imports {
         this.transaction = transaction;
     }
 
+    /** What a new version may say about itself, at most. */
+    static final int MAX_NOTE = 500;
+
+    private static final java.util.regex.Pattern CONTROL_BUT_LINES = java.util.regex.Pattern.compile("[\\p{Cc}&&[^\\n\\t]]");
+
     /** The fields of the form, checked. */
     private record Form(@Nullable UUID folderId, String status, @Nullable String category, boolean restricted,
             List<UUID> userIds) {
+    }
+
+    /**
+     * The fields of the form of a new version, checked.
+     *
+     * @param status the status the document takes when the version becomes current; null: unchanged
+     */
+    private record VersionForm(@Nullable String note, @Nullable String status) {
+    }
+
+    /** A file received and checked, not yet in its place. */
+    private record Upload(FileStore.Received received, String filename, Formats format) {
     }
 
     /**
@@ -92,7 +113,102 @@ class Imports {
      */
     DocumentView importFile(Viewer viewer, UUID spaceId, HttpServletRequest request) {
         Space space = spaces.open(viewer, spaceId, SpaceRole.CONTRIBUTOR).requireActive().space();
-        int megabytes = settings.megabytes(space.organizationId());
+        int megabytes = announced(space.organizationId(), request);
+        Part part = part(request, megabytes);
+        String filename = Titles.filename(part.getSubmittedFileName());
+        Form form = form(request);
+        Upload upload = receive(space.organizationId(), part, filename, megabytes);
+        FileStore.Received received = upload.received();
+        UUID documentId;
+        AtomicBoolean placed = new AtomicBoolean();
+        try {
+            documentId = transaction.execute(status -> create(viewer, spaceId, received, filename, upload.format(), form,
+                    placed));
+        } catch (RuntimeException e) {
+            undo(space.organizationId(), received, placed);
+            throw e;
+        }
+        Documents.Opened opened = reads.open(viewer, documentId);
+        DocumentViews.DocumentLink duplicate = documents
+                .sameContent(opened.space().id(), received.sha256(), documentId, reads.readable(viewer))
+                .map(row -> new DocumentViews.DocumentLink(row.id(), row.title()))
+                .orElse(null);
+        return reads.view(viewer, opened, duplicate);
+    }
+
+    /**
+     * A new version of a document, extracted next; the current one stays until then. Field errors
+     * on {@code file} as for an import, {@code note:too_long}, {@code status:invalid_value};
+     * {@code 409 same_content} (with {@code version}), {@code 409 document_archived},
+     * {@code 409 space_archived}, {@code 413 file_too_large}, {@code 507 storage_full}.
+     */
+    DocumentView newVersion(Viewer viewer, UUID documentId, HttpServletRequest request) {
+        Documents.Opened opened = reads.open(viewer, documentId);
+        if (!opened.role().includes(SpaceRole.CONTRIBUTOR)) {
+            throw ApiException.forbidden("contributor_only");
+        }
+        opened.space().ref().requireActive();
+        Documents.writable(opened);
+        UUID organizationId = opened.space().organizationId();
+        int megabytes = announced(organizationId, request);
+        Part part = part(request, megabytes);
+        String filename = Titles.filename(part.getSubmittedFileName());
+        VersionForm form = versionForm(request);
+        Upload upload = receive(organizationId, part, filename, megabytes);
+        AtomicBoolean placed = new AtomicBoolean();
+        try {
+            transaction.executeWithoutResult(status -> createVersion(viewer, documentId, upload, form, placed));
+        } catch (RuntimeException e) {
+            undo(organizationId, upload.received(), placed);
+            throw e;
+        }
+        return reads.view(viewer, reads.open(viewer, documentId), null);
+    }
+
+    private void createVersion(Viewer viewer, UUID documentId, Upload upload, VersionForm form, AtomicBoolean placed) {
+        Documents.Opened opened = Documents.writable(reads.openForChange(viewer, documentId, SpaceRole.CONTRIBUTOR));
+        DocumentRepository.Row row = opened.row();
+        Space space = opened.space();
+        FileStore.Received received = upload.received();
+        // The same file as the latest version, current or not, would add nothing; an older one is a way back.
+        DocumentRepository.Version latest = reads.latest(row);
+        if (latest.sha256().equals(received.sha256())) {
+            throw ApiException.conflict("same_content").with("version", latest.number());
+        }
+        documents.lockContent(space.organizationId(), received.sha256());
+        DocumentRepository.Version current = row.version();
+        int number = documents.nextNumber(row.id());
+        UUID versionId = documents.insertNewVersion(new DocumentRepository.NewVersion(row.id(), number, received.sha256(),
+                upload.filename(), upload.format().mediaType(), received.size(), viewer.userId(), form.note(), form.status(),
+                current.languageChosen() ? current.language() : null));
+        try {
+            store.keep(received);
+            placed.set(true);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        queue.enqueue(versionId, space.organizationId(), received.sha256(), upload.format().mediaType());
+        spaces.touch(space.id());
+        audit.record(AuditEntry.of(space.organizationId(), viewer.userId(), "document.version_imported")
+                .resource("document", row.id())
+                .ip(viewer.ip())
+                .detail("title", row.title())
+                .detail("space", space.name())
+                .detail("spaceId", space.id())
+                .detail("version", number)
+                .detail("previous", current.number())
+                .detail("filename", upload.filename())
+                .detail("size", received.size())
+                .detail("status", form.status())
+                .build());
+    }
+
+    /**
+     * The size of a file the organization accepts, in megabytes, checked against the size the request
+     * announces, and the free space of the disk: before anything is read.
+     */
+    private int announced(UUID organizationId, HttpServletRequest request) {
+        int megabytes = settings.megabytes(organizationId);
         long maxBytes = DataSize.ofMegabytes(megabytes).toBytes();
         if (request.getContentLengthLong() > maxBytes + LoreProperties.UPLOAD_FORM_MARGIN.toBytes()) {
             throw tooLarge(megabytes);
@@ -100,16 +216,18 @@ class Imports {
         if (store.freeSpace() < MIN_FREE_BYTES + Math.max(0, request.getContentLengthLong())) {
             throw new ApiException(HttpStatus.INSUFFICIENT_STORAGE, "storage_full");
         }
-        Part part = part(request, megabytes);
-        String filename = Titles.filename(part.getSubmittedFileName());
-        Form form = form(request);
+        return megabytes;
+    }
 
+    /** The file received in the temporary folder, then checked: deleted again when it is refused. */
+    private Upload receive(UUID organizationId, Part part, String filename, int megabytes) {
+        long maxBytes = DataSize.ofMegabytes(megabytes).toBytes();
         FileStore.Received received;
         Path upload = store.newTemporaryFile();
         try {
             // Moved, not copied: the server wrote the part in the same temporary folder.
             part.write(upload.toString());
-            received = store.adopt(space.organizationId(), upload, maxBytes);
+            received = store.adopt(organizationId, upload, maxBytes);
         } catch (FileStore.TooLarge e) {
             throw tooLarge(megabytes);
         } catch (IOException e) {
@@ -121,8 +239,6 @@ class Imports {
         } finally {
             deleteQuietly(part);
         }
-        UUID documentId;
-        AtomicBoolean placed = new AtomicBoolean();
         try {
             if (received.size() == 0) {
                 throw Checks.rejected("file", "empty_file");
@@ -131,21 +247,20 @@ class Imports {
             if (store.freeSpace() < MIN_FREE_BYTES) {
                 throw new ApiException(HttpStatus.INSUFFICIENT_STORAGE, "storage_full");
             }
-            documentId = transaction.execute(status -> create(viewer, spaceId, received, filename, format, form, placed));
+            return new Upload(received, filename, format);
         } catch (RuntimeException e) {
             store.discard(received);
-            if (placed.get()) {
-                // Put in its place before the transaction was cancelled: deleted unless used already.
-                janitor.deleteIfUnused(space.organizationId(), received.sha256());
-            }
             throw e;
         }
-        Documents.Opened opened = reads.open(viewer, documentId);
-        DocumentViews.DocumentLink duplicate = documents
-                .sameContent(opened.space().id(), received.sha256(), documentId, reads.readable(viewer))
-                .map(row -> new DocumentViews.DocumentLink(row.id(), row.title()))
-                .orElse(null);
-        return reads.view(viewer, opened, duplicate);
+    }
+
+    /** A file received for an import that failed: deleted, and from its place unless something else uses it. */
+    private void undo(UUID organizationId, FileStore.Received received, AtomicBoolean placed) {
+        store.discard(received);
+        if (placed.get()) {
+            // Put in its place before the transaction was cancelled: deleted unless used already.
+            janitor.deleteIfUnused(organizationId, received.sha256());
+        }
     }
 
     private UUID create(Viewer viewer, UUID spaceId, FileStore.Received received, String filename, Formats format,
@@ -257,6 +372,21 @@ class Imports {
         checks.orThrow();
         return new Form(folderId, status == null ? "DRAFT" : status.name(), category == null ? null : category.name(),
                 restricted, userIds.stream().distinct().toList());
+    }
+
+    private static VersionForm versionForm(HttpServletRequest request) {
+        Checks checks = Checks.start();
+        String note = request.getParameter("note");
+        String written = note == null ? ""
+                : CONTROL_BUT_LINES.matcher(note.replace("\r\n", "\n")).replaceAll(" ").strip();
+        if (written.length() > MAX_NOTE) {
+            checks.fail("note", "too_long", java.util.Map.of("max", MAX_NOTE));
+        }
+        String requested = request.getParameter("status");
+        Documents.ImportStatus status = requested == null || requested.isBlank() ? null
+                : checks.oneOf("status", requested.strip().toUpperCase(java.util.Locale.ROOT), Documents.ImportStatus.class);
+        checks.orThrow();
+        return new VersionForm(written.isEmpty() ? null : written, status == null ? null : status.name());
     }
 
     private static ApiException tooLarge(int megabytes) {

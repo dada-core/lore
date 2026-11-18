@@ -66,13 +66,30 @@ function form(file: File, fields: ImportFields): FormData {
  * for a missing token is sent again once, after fetching a new one.
  */
 export function uploadFile(spaceId: string, file: File, fields: ImportFields, onProgress: (fraction: number) => void): Upload {
+  return post(`/api/v1/spaces/${encodeURIComponent(spaceId)}/documents`, form(file, fields), onProgress);
+}
+
+/**
+ * Sends the file of a new version of a document, with what changes and the status it asks for
+ * (none: unchanged), the same way.
+ */
+export function uploadVersion(documentId: string, file: File, note: string, status: string | null,
+  onProgress: (fraction: number) => void): Upload {
+  const data = new FormData();
+  if (note.trim()) data.append('note', note.trim());
+  if (status) data.append('status', status);
+  data.append('file', file, file.name);
+  return post(`/api/v1/documents/${encodeURIComponent(documentId)}/versions`, data, onProgress);
+}
+
+function post(url: string, data: FormData, onProgress: (fraction: number) => void): Upload {
   let request: XMLHttpRequest | null = null;
   let stopped = false;
 
   const send = () => new Promise<Answer>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     request = xhr;
-    xhr.open('POST', `/api/v1/spaces/${encodeURIComponent(spaceId)}/documents`);
+    xhr.open('POST', url);
     xhr.setRequestHeader('Accept', 'application/json');
     const token = readCookie('XSRF-TOKEN');
     if (token) xhr.setRequestHeader('X-XSRF-TOKEN', token);
@@ -83,7 +100,7 @@ export function uploadFile(spaceId: string, file: File, fields: ImportFields, on
     xhr.onerror = () => reject(new ApiError(0, 'network'));
     xhr.ontimeout = () => reject(new ApiError(0, 'network'));
     xhr.onabort = () => reject(aborted());
-    xhr.send(form(file, fields));
+    xhr.send(data);
   });
 
   const done = (async () => {

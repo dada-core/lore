@@ -30,9 +30,15 @@ const READING_LINE = 120;
  * A long document comes part by part (about 500,000 characters each): the outline covers the whole
  * document and opens the right part.
  */
-export function RenderedDocument({ document, target, navigationRef, onOutline, onReading, onCopySection, onNotice, onShown }: {
+export function RenderedDocument({ document, target, fromVersion, onFound, navigationRef, onOutline, onReading, onCopySection, onNotice, onShown }: {
   document: Document;
   target: Target;
+  /**
+   * The version a link was made for, older than the one shown: the place of the link is then
+   * looked for by its title in this version, and {@link onFound} tells what was found.
+   */
+  fromVersion?: number | null;
+  onFound?: (anchor: string | null) => void;
   navigationRef: RefObject<Navigation | null>;
   onOutline: (items: OutlineItem[]) => void;
   onReading: (anchor: string | null) => void;
@@ -56,13 +62,20 @@ export function RenderedDocument({ document, target, navigationRef, onOutline, o
   const pending = useRef<{ place: string; query: string } | null>(target.place ? { place: target.place, query: target.query } : null);
   // Until then, scrolling is the reader's own, towards a place it shows: not a reading to follow.
   const quietUntil = useRef(0);
+  // The place of the address, which a link made for an older version names in that version: asked
+  // with it, the server finds the section of the same title here.
+  const [firstAnchor] = useState(target.place);
+  const told = useRef(false);
+  const from = fromVersion && part === null && anchor !== null && anchor === firstAnchor ? fromVersion : null;
 
   const rendering = useQuery({
-    queryKey: [...keys.document(document.id), 'rendering', version.id, part ?? `anchor:${anchor ?? ''}`],
+    queryKey: [...keys.document(document.id), 'rendering', version.id, part ?? `anchor:${anchor ?? ''}`, from ?? ''],
     queryFn: () => call(() => api.GET('/api/v1/documents/{id}/versions/{number}/rendering', {
       params: {
         path: { id: document.id, number: version.number },
-        query: part === null ? { anchor: anchor ?? undefined } : { part, outline: outline.current === null },
+        query: part === null
+          ? { anchor: anchor ?? undefined, fromVersion: from ?? undefined }
+          : { part, outline: outline.current === null },
       },
     })),
     staleTime: Infinity,
@@ -83,8 +96,15 @@ export function RenderedDocument({ document, target, navigationRef, onOutline, o
     const root = container.current;
     if (!root || !data) return;
     enhance(root, i18n);
-    const wanted = pending.current;
+    let wanted = pending.current;
     pending.current = null;
+    if (from !== null && !told.current) {
+      // A link of an older version: the section of the same title here, or the top.
+      told.current = true;
+      onFound?.(data.anchor ?? null);
+      wanted = wanted && data.anchor ? { place: data.anchor, query: wanted.query } : null;
+      if (!wanted) root.scrollIntoView?.({ block: 'start' });
+    }
     if (wanted) {
       const found = reveal(root, wanted.place, wanted.query);
       onNotice(found ? null : 'missing');
