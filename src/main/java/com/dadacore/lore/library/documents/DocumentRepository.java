@@ -406,14 +406,50 @@ class DocumentRepository {
                 .optional();
     }
 
-    void extracted(UUID versionId, String status, String language, @Nullable Integer pageCount, int sectionCount,
-            boolean truncated) {
-        jdbc.sql("""
+    /**
+     * The outcome of an extraction. A language chosen by a person is kept when the same version is
+     * extracted again: the language the version ends with is returned.
+     */
+    @Nullable
+    String extracted(UUID versionId, String status, @Nullable String language, @Nullable Integer pageCount,
+            int sectionCount, boolean truncated) {
+        return jdbc.sql("""
                 update document_version set extraction_status = ?, extraction_error = null, extracted_at = now(),
-                    language = ?, page_count = ?, section_count = ?, text_truncated = ?
+                    language = case when language_chosen then language else ? end,
+                    page_count = ?, section_count = ?, text_truncated = ?
                 where id = ?
+                returning language
                 """)
                 .params(status, language, pageCount, sectionCount, truncated, versionId)
+                .query(String.class)
+                .optional()
+                .orElse(null);
+    }
+
+    /**
+     * The language a person chose for a version: its passages are indexed again in that language,
+     * and so is the title of its document, in the same transaction.
+     */
+    void changeLanguage(UUID documentId, UUID versionId, String language) {
+        jdbc.sql("update document_version set language = ?, language_chosen = true where id = ?")
+                .params(language, versionId)
+                .update();
+        jdbc.sql("update chunk set language = ? where version_id = ? and language <> ?")
+                .params(language, versionId, language)
+                .update();
+        jdbc.sql("update document set search_language = ?, updated_at = now() where id = ?")
+                .params(language, documentId)
+                .update();
+    }
+
+    /** The title and the description of a document are indexed in the language of its current version. */
+    void searchLanguage(UUID versionId) {
+        jdbc.sql("""
+                update document d set search_language = v.language
+                from document_version v
+                where v.id = ? and d.current_version_id = v.id and d.search_language is distinct from v.language
+                """)
+                .param(versionId)
                 .update();
     }
 
@@ -436,10 +472,12 @@ class DocumentRepository {
                 .update();
     }
 
-    void replaceChunks(UUID versionId, List<ExtractedChunk> chunks) {
+    /** The passages of a version, with its language, which their search vectors are computed in. */
+    void replaceChunks(UUID versionId, List<ExtractedChunk> chunks, @Nullable String language) {
         jdbc.sql("delete from chunk where version_id = ?").param(versionId).update();
+        String indexed = language == null ? "other" : language;
         template.batchUpdate("""
-                insert into chunk (version_id, ordinal, anchor, page, headings, content) values (?, ?, ?, ?, ?, ?)
+                insert into chunk (version_id, ordinal, anchor, page, headings, content, language) values (?, ?, ?, ?, ?, ?, ?)
                 """, new BatchPreparedStatementSetter() {
             @Override
             public void setValues(PreparedStatement statement, int i) throws SQLException {
@@ -451,6 +489,7 @@ class DocumentRepository {
                 Array headings = statement.getConnection().createArrayOf("text", chunk.headings().toArray());
                 statement.setArray(5, headings);
                 statement.setString(6, chunk.content());
+                statement.setString(7, indexed);
             }
 
             @Override

@@ -1,8 +1,9 @@
 #!/bin/sh
 # Imports a small PDF and a Markdown file into a fresh installation of Lore, waits until their
-# text is extracted, then downloads the PDF and reads the rendering of the Markdown. It proves that
-# the extraction process starts with the Java of the installation (the packages bundle a reduced
-# Java runtime, which must hold what Apache Tika needs), and that the reader serves both.
+# text is extracted, then downloads the PDF, reads the rendering of the Markdown and searches it. It
+# proves that the extraction process starts with the Java of the installation (the packages bundle a
+# reduced Java runtime, which must hold what Apache Tika needs), that the reader serves both, and
+# that the search of PostgreSQL finds them (its configurations come with every installation).
 #   sh packaging/import-check.sh <log of Lore, which holds the setup code> [address of Lore]
 set -eu
 
@@ -102,3 +103,9 @@ grep -qF 'id=\"h-2\"' "$work/rendering.json" || fail "no anchor in the rendering
 grep -qF '<code>pg_restore</code>' "$work/rendering.json" || fail "no code in the rendering"
 ! grep -qF '<script' "$work/rendering.json" || fail "a script went through the rendering"
 echo "import check: a Markdown file rendered for reading"
+
+# The search finds the Markdown file by an identifier, at the passage that holds it.
+curl -fsS -b "$jar" -o "$work/search.json" "$base/api/v1/search?q=pg_restore" || fail "search"
+grep -qF "\"id\":\"$markdown\"" "$work/search.json" || fail "the search does not find the Markdown file: $(cat "$work/search.json")"
+grep -qF '"anchor":"h-' "$work/search.json" || fail "no passage in the search: $(cat "$work/search.json")"
+echo "import check: the search finds the Markdown file at its passage"

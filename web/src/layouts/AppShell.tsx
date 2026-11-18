@@ -3,6 +3,7 @@ import { createContext, Fragment, useCallback, useContext, useEffect, useState, 
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate, useSearchParams } from 'react-router';
 import { useOpenImport } from '../documents/documents';
 import { ImportDialog } from '../documents/ImportDialog';
+import { Palette, PaletteContext, useOpenPalette } from '../search/Palette';
 import { useI18n } from '../i18n/i18n';
 import { signOut, useSession, useUser } from '../session/session';
 import { CreateSpaceDialog } from '../spaces/CreateSpaceDialog';
@@ -43,6 +44,9 @@ export function AppShell() {
   const importable = (spaces.data ?? []).filter(canContribute);
   const canImport = shownSpace ? importable.some((space) => space.slug === shownSpace) : importable.length > 0;
   const setDrawerOpen = useCallback((open: boolean) => setDrawerPath(open ? pathname : null), [pathname]);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  const createSpace = useCreateSpace();
 
   const showNavigation = useCallback(() => {
     if (window.matchMedia(NARROW).matches) setDrawerOpen(true);
@@ -90,6 +94,23 @@ export function AppShell() {
     return () => document.removeEventListener('keydown', onKey);
   }, [canImport, openImport]);
 
+  // Ctrl K (Cmd K): the palette. /: the search page, its field selected. Neither while typing nor
+  // in a window, like I, [ and ].
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isTyping() || document.querySelector('dialog[open]')) return;
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen(true);
+      } else if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        navigate('/search', { state: { focus: true } });
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [navigate]);
+
   // "Create a space" opens from the sidebar, the home page and the list of spaces; "Import
   // documents" from the home page, a library and the I key.
   const opened = params.get('open');
@@ -105,6 +126,7 @@ export function AppShell() {
 
   return (
     <ShellContext value={{ showNavigation }}>
+      <PaletteContext value={openPalette}>
       <div className={navShown ? 'app' : 'app hide-nav'}>
         <Sidebar open={drawerOpen} onFold={toggleNav} />
         {drawerOpen && (
@@ -116,6 +138,10 @@ export function AppShell() {
       </div>
       {opened === 'create-space' && <CreateSpaceDialog onClose={() => closeWindow('createSpace')} />}
       {opened === 'import' && <ImportDialog slug={shownSpace} onClose={() => closeWindow('importing')} />}
+      {paletteOpen && (
+        <Palette onClose={() => setPaletteOpen(false)} canImport={canImport} onImport={openImport} onCreateSpace={createSpace} />
+      )}
+      </PaletteContext>
     </ShellContext>
   );
 }
@@ -127,6 +153,7 @@ function Sidebar({ open, onFold }: { open: boolean; onFold: () => void }) {
   const user = useUser();
   const theme = useTheme();
   const fade = useVerticalFade<HTMLDivElement>();
+  const openPalette = useOpenPalette();
   const name = organization?.name ?? 'Lore';
 
   const cycleTheme = () => {
@@ -166,6 +193,12 @@ function Sidebar({ open, onFold }: { open: boolean; onFold: () => void }) {
         </button>
       </div>
 
+      <button type="button" className="side-search" onClick={openPalette} aria-keyshortcuts="Control+K Meta+K">
+        <Icon name="search" />
+        <span className="label">{t('search.openPalette')}</span>
+        <kbd>Ctrl K</kbd>
+      </button>
+
       <div className="side-scroll fade-y" ref={fade}>
         <nav aria-label={t('nav.environment')}>
           <ul className="nav">
@@ -173,6 +206,12 @@ function Sidebar({ open, onFold }: { open: boolean; onFold: () => void }) {
               <NavLink className="nav-link" to="/" end>
                 <Icon name="home" />
                 <span className="label">{t('nav.home')}</span>
+              </NavLink>
+            </li>
+            <li>
+              <NavLink className="nav-link" to="/search">
+                <Icon name="search" />
+                <span className="label">{t('nav.search')}</span>
               </NavLink>
             </li>
           </ul>

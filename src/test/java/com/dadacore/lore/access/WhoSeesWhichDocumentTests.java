@@ -34,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>In the space Infrastructure: A, open, imported by the contributor; B, open, by the
  * maintainer; R1, restricted to the reader, by the maintainer; R2, restricted to nobody, by the
  * maintainer; R3, restricted to nobody, by the contributor. And a document of another organization.
+ * Each one holds a word that is only in it, and the word "commun".
  */
 class WhoSeesWhichDocumentTests extends ApiTest {
 
@@ -48,6 +49,19 @@ class WhoSeesWhichDocumentTests extends ApiTest {
 
     private record Probe(String route, Function<Person, Response> call, int[] expected) {
     }
+
+    /** The word only each document holds, for the search. */
+    private static final Map<String, String> WORDS = Map.of("A", "aardvark", "B", "bonobo", "R1", "chinchilla",
+            "R2", "dugong", "R3", "echidna", "Secret", "fennec");
+
+    /** What each person sees, in the space Infrastructure. */
+    private static final Map<Person, List<String>> VISIBLE = Map.of(
+            Person.OWNER, List.of("A", "B", "R1", "R2", "R3"),
+            Person.ADMIN, List.of("A", "B", "R1", "R2", "R3"),
+            Person.MAINTAINER, List.of("A", "B", "R1", "R2", "R3"),
+            Person.CONTRIBUTOR, List.of("A", "B", "R3"),
+            Person.READER, List.of("A", "B", "R1"),
+            Person.OUTSIDER, List.of());
 
     @Autowired
     ExtractionResults results;
@@ -116,7 +130,13 @@ class WhoSeesWhichDocumentTests extends ApiTest {
                 probe("PUT owner of a document restricted to nobody",
                         p -> as(p).put(document(Person.MAINTAINER, "R-" + next() + ".txt", "restricted", "true") + "/owner",
                                 body("userId", userId(ELI))),
-                        200, 200, 200, 404, 404, 404, 401));
+                        200, 200, 200, 404, 404, 404, 401),
+                // The search answers every member: what it finds is checked below.
+                probe("GET search", p -> as(p).get("/api/v1/search?q=dugong"), 200, 200, 200, 200, 200, 200, 401),
+                probe("GET search/titles", p -> as(p).get("/api/v1/search/titles?q=R2"), 200, 200, 200, 200, 200, 200, 401),
+                probe("PATCH A, language", p -> as(p).patch(a, body("language", next() % 2 == 0 ? "en" : "fr")),
+                        200, 200, 200, 200, 403, 404, 401),
+                probe("PATCH R2, language", p -> as(p).patch(r2, body("language", "en")), 200, 200, 200, 404, 404, 404, 401));
 
         return probes.stream().flatMap(probe -> Arrays.stream(Person.values()).map(person -> {
             int expected = probe.expected()[person.ordinal()];
@@ -158,6 +178,53 @@ class WhoSeesWhichDocumentTests extends ApiTest {
     }
 
     @Test
+    void theSearchFindsOnlyTheDocumentsThePersonCanSee() {
+        organization();
+        for (Person person : VISIBLE.keySet()) {
+            List<String> visible = VISIBLE.get(person);
+            WORDS.forEach((title, word) -> {
+                boolean found = visible.contains(title);
+                Response search = as(person).get("/api/v1/search?q=" + word);
+                assertThat(titlesFound(search)).as(person + " searching " + word).isEqualTo(found ? List.of(title) : List.of());
+                assertThat(search.number("total")).isEqualTo(found ? 1 : 0);
+                assertThat(search.json().path("facets").path("spaces").size()).isEqualTo(found ? 1 : 0);
+                Response titles = as(person).get("/api/v1/search/titles?q=" + title);
+                List<String> named = new ArrayList<>();
+                titles.json().forEach(item -> named.add(item.get("title").asString()));
+                assertThat(named).as(person + " typing " + title).isEqualTo(found ? List.of(title) : List.of());
+            });
+            // A word in every document: the total, the excerpts and the counts of the filters hold
+            // the documents the person sees, and nothing else.
+            Response common = as(person).get("/api/v1/search?q=commun");
+            assertThat(titlesFound(common)).as(person.name()).containsExactlyInAnyOrderElementsOf(visible);
+            assertThat(common.number("total")).isEqualTo(visible.size());
+            long counted = 0;
+            for (var status : common.json().path("facets").path("statuses")) {
+                counted += status.get("count").asLong();
+            }
+            assertThat(counted).isEqualTo(visible.size());
+        }
+        assertThat(as(Person.ANONYMOUS).get("/api/v1/search?q=commun").status()).isEqualTo(401);
+
+        // A document hidden from the reader answers exactly as a word nobody wrote; and a space
+        // asked as a filter, that the person cannot see, as a space that does not exist.
+        Response hidden = as(Person.READER).get("/api/v1/search?q=dugong");
+        Response nobody = as(Person.READER).get("/api/v1/search?q=wapiti");
+        assertThat(hidden.json()).isEqualTo(nobody.json());
+        String otherSpace = jdbc.sql("select s.id::text from space s join document d on d.space_id = s.id where d.title = 'Secret'")
+                .query(String.class).single();
+        Response foreign = as(Person.OWNER).get("/api/v1/search?q=commun&space=" + otherSpace);
+        Response invented = as(Person.OWNER).get("/api/v1/search?q=commun&space=" + UUID.randomUUID());
+        assertThat(foreign.json()).isEqualTo(invented.json());
+
+        // An access taken away: gone at the next search.
+        assertThat(titlesFound(as(Person.READER).get("/api/v1/search?q=chinchilla"))).containsExactly("R1");
+        assertThat(as(Person.MAINTAINER).put(r1 + "/access", body("restricted", true, "userIds", List.of())).status())
+                .isEqualTo(200);
+        assertThat(titlesFound(as(Person.READER).get("/api/v1/search?q=chinchilla"))).isEmpty();
+    }
+
+    @Test
     void aDuplicateNeverPointsToADocumentThePersonCannotSee() {
         organization();
 
@@ -188,6 +255,18 @@ class WhoSeesWhichDocumentTests extends ApiTest {
         assertThat(file(Person.CONTRIBUTOR, a + "/versions/1/file").status()).isEqualTo(404);
         assertThat(as(Person.READER).get(a + "/versions/1/rendering").status()).isEqualTo(404);
         assertThat(as(Person.MAINTAINER).put(a + "/owner", body("userId", userId(ELI))).code()).isEqualTo("space_archived");
+        assertThat(as(Person.MAINTAINER).patch(a, body("language", "en")).code()).isEqualTo("space_archived");
+
+        // Its documents are retired: out of the results by default, even for those who still see the
+        // space, who find it unchecked in the filter of the spaces and may check it.
+        Response maintainer = as(Person.MAINTAINER).get("/api/v1/search?q=bonobo");
+        assertThat(maintainer.number("total")).isZero();
+        assertThat(maintainer.json().path("facets").path("spaces").get(0).get("archived").asBoolean()).isTrue();
+        assertThat(titlesFound(as(Person.MAINTAINER).get("/api/v1/search?q=bonobo&includeArchived=true"))).containsExactly("B");
+        assertThat(titlesFound(as(Person.MAINTAINER).get("/api/v1/search?q=bonobo&space=" + id(space)))).containsExactly("B");
+        assertThat(as(Person.READER).get("/api/v1/search?q=bonobo&includeArchived=true").number("total")).isZero();
+        assertThat(as(Person.READER).get("/api/v1/search?q=bonobo").json().path("facets").path("spaces").size()).isZero();
+        assertThat(as(Person.MAINTAINER).get("/api/v1/search/titles?q=B").json().size()).isZero();
     }
 
     @Test
@@ -235,12 +314,15 @@ class WhoSeesWhichDocumentTests extends ApiTest {
         r1 = document(Person.MAINTAINER, "R1.txt", "restricted", "true", "userIds", userId(ELFRIED).toString());
         r2 = document(Person.MAINTAINER, "R2.txt", "restricted", "true");
         r3 = document(Person.CONTRIBUTOR, "R3.txt", "restricted", "true");
-        // Their extraction, as it would end: each has its rendering.
+        // Their extraction, as it would end: each has its rendering, and its own word.
+        Map<String, String> titles = Map.of(a, "A", b, "B", r1, "R1", r2, "R2", r3, "R3");
         for (String document : List.of(a, b, r1, r2, r3)) {
             UUID version = jdbc.sql("select current_version_id from document where id = ?::uuid").param(id(document))
                     .query(UUID.class).single();
+            jdbc.sql("update document set title = ? where id = ?::uuid").params(titles.get(document), id(document)).update();
             results.extracted(version, new Extraction(false, "fr", null, false, null,
-                    List.of(new ExtractedChunk(0, "part-1", null, List.of(), "Contenu")),
+                    List.of(new ExtractedChunk(0, "part-1", null, List.of(),
+                            "Contenu commun " + WORDS.get(titles.get(document)))),
                     new Rendering(List.of("<section id=\"part-1\"><pre>Contenu</pre></section>"),
                             List.of(new Rendering.Place("part-1", 1, 0, null)), false)));
         }
@@ -266,6 +348,9 @@ class WhoSeesWhichDocumentTests extends ApiTest {
                 values (?, 1, repeat('a', 64), 'secret.txt', 'text/plain', 6) returning id
                 """).param(document).query(UUID.class).single();
         jdbc.sql("update document set current_version_id = ? where id = ?").params(version, document).update();
+        // Extracted, with the words of the others: found by nobody here.
+        results.extracted(version, new Extraction(false, "fr", null, false, null,
+                List.of(new ExtractedChunk(0, "part-1", null, List.of(), "Secret commun fennec")), null));
         other = "/api/v1/documents/" + document;
     }
 
@@ -286,6 +371,13 @@ class WhoSeesWhichDocumentTests extends ApiTest {
         assertThat(list.status()).as(list.toString()).isEqualTo(200);
         List<String> titles = new ArrayList<>();
         list.json().path("items").forEach(item -> titles.add(item.get("title").asString()));
+        return titles;
+    }
+
+    private List<String> titlesFound(Response search) {
+        assertThat(search.status()).as(search.toString()).isEqualTo(200);
+        List<String> titles = new ArrayList<>();
+        search.json().path("items").forEach(item -> titles.add(item.path("document").get("title").asString()));
         return titles;
     }
 

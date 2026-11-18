@@ -539,6 +539,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The documents the person may read that match q (words, "phrase", -excluded, or), ranked, obsolete ones last, with an excerpt of their best passage and the values of the filters with their number of documents. Field errors on q: required, too_long (500), too_many_words (32), common_words_only, exclusions_only. 429 too_many_searches, 503 search_timeout */
+        get: operations["search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search/titles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** For the palette: the documents the person may read whose title has a word beginning with each word typed, those being extracted included (size: 8 by default, 12 at most) */
+        get: operations["titles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/session": {
         parameters: {
             query?: never;
@@ -878,6 +912,7 @@ export interface components {
         DocumentChanges: {
             category?: string | null;
             description?: string | null;
+            language?: string | null;
             title?: string | null;
         };
         DocumentItem: {
@@ -949,11 +984,26 @@ export interface components {
             currentPassword: string;
             email: string;
         };
+        Excerpt: {
+            highlights: number[][];
+            text: string;
+        };
         ExtractionView: {
             active: boolean;
             problem?: string | null;
             /** Format: int32 */
             workers: number;
+        };
+        Facets: {
+            categories: components["schemas"]["ValueCount"][];
+            formats: components["schemas"]["ValueCount"][];
+            spaces: components["schemas"]["SpaceCount"][];
+            statuses: components["schemas"]["ValueCount"][];
+        };
+        Folder: {
+            /** Format: uuid */
+            id: string;
+            name: string;
         };
         FolderDocuments: {
             /** Format: int64 */
@@ -1082,6 +1132,11 @@ export interface components {
             name: string;
             timeZone: string;
         };
+        OtherPassages: {
+            items: components["schemas"]["PassageRef"][];
+            /** Format: int32 */
+            total: number;
+        };
         OutlineEntry: {
             anchor: string;
             /** Format: int32 */
@@ -1112,6 +1167,12 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        PassageRef: {
+            anchor: string;
+            headings: string[];
+            /** Format: int32 */
+            page?: number | null;
+        };
         PasswordChange: {
             currentPassword: string;
             newPassword: string;
@@ -1121,6 +1182,13 @@ export interface components {
             displayName: string;
             /** Format: uuid */
             id: string;
+        };
+        Place: {
+            archived: boolean;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            slug: string;
         };
         ProfileUpdate: {
             displayName?: string | null;
@@ -1158,8 +1226,52 @@ export interface components {
             /** Format: int32 */
             passwordMinLength: number;
         };
+        Result: {
+            description?: components["schemas"]["Excerpt"] | null;
+            document: components["schemas"]["ResultDocument"];
+            match: string;
+            otherPassages: components["schemas"]["OtherPassages"];
+            passage?: components["schemas"]["ResultPassage"] | null;
+            /** Format: int32 */
+            version: number;
+            words: string[];
+        };
+        ResultDocument: {
+            category?: string | null;
+            extractionStatus: string;
+            folder?: components["schemas"]["Folder"] | null;
+            /** Format: uuid */
+            id: string;
+            language?: string | null;
+            mediaType: string;
+            restricted: boolean;
+            space: components["schemas"]["Place"];
+            status: string;
+            title: string;
+            titleHighlights: number[][];
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ResultPassage: {
+            anchor: string;
+            excerpt: string;
+            headings: string[];
+            highlights: number[][];
+            /** Format: int32 */
+            page?: number | null;
+        };
         RoleChange: {
             role: string;
+        };
+        SearchPage: {
+            facets: components["schemas"]["Facets"];
+            items: components["schemas"]["Result"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            size: number;
+            /** Format: int64 */
+            total: number;
         };
         SessionInfo: {
             organization?: components["schemas"]["OrganizationSummary"] | null;
@@ -1222,6 +1334,15 @@ export interface components {
             description?: string | null;
             name?: string | null;
             slug?: string | null;
+        };
+        SpaceCount: {
+            archived: boolean;
+            /** Format: int64 */
+            count: number;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            slug: string;
         };
         SpaceInvitation: {
             role: string;
@@ -1294,6 +1415,21 @@ export interface components {
             scanned: number;
             /** Format: int64 */
             usedBytes: number;
+        };
+        TitleResult: {
+            folder?: components["schemas"]["Folder"] | null;
+            /** Format: uuid */
+            id: string;
+            mediaType: string;
+            space: components["schemas"]["Place"];
+            status: string;
+            title: string;
+            titleHighlights: number[][];
+        };
+        ValueCount: {
+            /** Format: int64 */
+            count: number;
+            value: string;
         };
         VerifyCodeRequest: {
             setupCode: string;
@@ -2212,6 +2348,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResetDetails"];
+                };
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                space?: string[] | null;
+                category?: string[] | null;
+                status?: string[] | null;
+                format?: string[] | null;
+                updated?: string | null;
+                includeArchived?: boolean | null;
+                page?: number | null;
+                size?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchPage"];
+                };
+            };
+        };
+    };
+    titles: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                size?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleResult"][];
                 };
             };
         };

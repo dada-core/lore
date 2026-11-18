@@ -39,13 +39,21 @@ export function readTarget(search: string, hash: string): Target {
 
 /**
  * The words of a query, and its quoted phrases: {@code pg_restore role "does not exist"} gives
- * pg_restore, role and "does not exist". Very short words would light up everywhere: left out.
+ * pg_restore, role and "does not exist". {@code or} and the words left out ({@code -barman}) are
+ * the syntax of the search, not words found. Very short words would light up everywhere: left out.
  */
 export function termsOf(query: string): string[] {
   const terms: string[] = [];
-  const phrase = /"([^"]+)"/g;
-  for (const match of query.matchAll(phrase)) terms.push(match[1].trim());
-  for (const word of query.replace(phrase, ' ').split(/\s+/)) terms.push(word.trim());
+  const phrase = /(^|\s)(-?)"([^"]+)"/g;
+  for (const match of query.matchAll(phrase)) {
+    if (match[2] !== '-') terms.push(match[3].trim());
+  }
+  for (const word of query.replace(phrase, ' ').split(/\s+/)) {
+    const term = word.trim();
+    if (term.startsWith('-') && !term.startsWith('--')) continue;
+    if (term.toLowerCase() === 'or') continue;
+    terms.push(term.replace(/^"+|"+$/g, ''));
+  }
   return [...new Set(terms.filter((term) => term.length >= 2))];
 }
 

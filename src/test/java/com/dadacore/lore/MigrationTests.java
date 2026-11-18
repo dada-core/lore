@@ -62,6 +62,37 @@ class MigrationTests extends ApiTest {
                 .query(UUID.class).single()).isEqualTo(organization);
     }
 
+    @Test
+    void v7ComputesTheVectorsOfThePassagesAlreadyImportedInTheirLanguage() {
+        migrate("6");
+        JdbcClient sql = JdbcClient.create(dataSource);
+        UUID organization = sql.sql("insert into " + SCHEMA + ".organization (name, slug) values ('DadaGroup', 'dadagroup') returning id")
+                .query(UUID.class).single();
+        UUID space = sql.sql("insert into " + SCHEMA + ".space (organization_id, name, slug, color) values (?, 'Infrastructure',"
+                + " 'infrastructure', '#13705E') returning id").param(organization).query(UUID.class).single();
+        UUID english = version(sql, space, "text/markdown", "INDEXED", null);
+        sql.sql("update " + SCHEMA + ".document_version set language = 'en' where id = ?").param(english).update();
+        sql.sql("insert into " + SCHEMA + ".chunk (version_id, ordinal, anchor, headings, content) values (?, 1, 'h-1',"
+                + " '{Restarting}', 'The servers were restarted.')").param(english).update();
+        UUID unknown = version(sql, space, "text/plain", "FAILED", "corrupt");
+
+        migrate("7");
+
+        assertThat(sql.sql("select language from " + SCHEMA + ".chunk where version_id = ?").param(english)
+                .query(String.class).single()).isEqualTo("en");
+        assertThat(sql.sql("select search_language from " + SCHEMA + ".document where current_version_id = ?").param(english)
+                .query(String.class).single()).isEqualTo("en");
+        assertThat(sql.sql("select search_language from " + SCHEMA + ".document where current_version_id = ?").param(unknown)
+                .query(String.class).optional()).isEmpty();
+        // The English stemmer read the passage, and its section title weighs more than its text.
+        assertThat(sql.sql("select tsv_lang @@ to_tsquery('" + SCHEMA + ".lore_en', 'restart') from " + SCHEMA
+                + ".chunk where version_id = ?").param(english).query(Boolean.class).single()).isTrue();
+        assertThat(sql.sql("select tsv_lang::text from " + SCHEMA + ".chunk where version_id = ?").param(english)
+                .query(String.class).single()).contains("'restart':1B");
+        assertThat(sql.sql("select language_chosen from " + SCHEMA + ".document_version where id = ?").param(english)
+                .query(Boolean.class).single()).isFalse();
+    }
+
     private void migrate(String target) {
         Flyway.configure()
                 .dataSource(dataSource)

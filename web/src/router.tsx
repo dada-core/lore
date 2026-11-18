@@ -13,6 +13,7 @@ import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { SetupPage } from './pages/SetupPage';
+import { SearchPage } from './search/SearchPage';
 import { CrashPage, Root } from './Root';
 import { GuestOnly, RequireAdmin, RequireUser } from './session/guards';
 import { SpaceLibraryPage } from './spaces/SpaceLibraryPage';
@@ -41,6 +42,7 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <HomePage /> },
           { path: 'account', element: <AccountPage /> },
+          { path: 'search', element: <SearchPage /> },
           { path: 'spaces', element: <SpacesPage /> },
           {
             path: 'spaces/:slug',

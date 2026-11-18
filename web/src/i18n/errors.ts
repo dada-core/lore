@@ -16,7 +16,8 @@ export function fieldMessage(i18n: I18n, error: Pick<FieldError, 'code' | 'param
 export function errorMessage(i18n: I18n, error: unknown): string {
   if (!(error instanceof ApiError)) return i18n.t('error.generic');
   if (error.status === 0) return i18n.t('error.network');
-  if (error.status >= 500) return i18n.t('error.server_error');
+  // A search that took too long says so; any other failure of the server is the same to the person.
+  if (error.status >= 500 && error.code !== 'search_timeout') return i18n.t('error.server_error');
   const key = `error.${error.code}`;
   return isKey(key) ? i18n.t(key) : i18n.t('error.generic');
 }

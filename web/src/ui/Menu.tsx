@@ -27,7 +27,7 @@ interface MenuProps {
 }
 
 const items = (popover: HTMLElement | null) =>
-  Array.from(popover?.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]') ?? []);
+  Array.from(popover?.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]') ?? []);
 
 /**
  * A button that opens a list of actions. The list is placed against the viewport, so that a grid
@@ -178,6 +178,26 @@ export function MenuItem({ icon, danger, children, onSelect, checked }: ItemProp
       }}
     >
       {icon && <Icon name={icon} />}
+      {children}
+    </button>
+  );
+}
+
+/** A value to keep or leave out, among several: the menu stays open for the next one. */
+export function MenuCheck({ children, checked, disabled, onToggle }: { children: ReactNode; checked: boolean; disabled?: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      aria-disabled={disabled || undefined}
+      tabIndex={-1}
+      className="menu-item menu-check"
+      onClick={() => {
+        if (!disabled) onToggle();
+      }}
+    >
+      <span className="check-box" aria-hidden="true">{checked && <Icon name="check" />}</span>
       {children}
     </button>
   );
