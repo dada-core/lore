@@ -10,7 +10,7 @@ Lore is an open source workspace where technical teams import, organize, search 
 
 Under development, towards v0.1. Working today: the initial setup in the browser, sign-in, invitations, password reset links, My account, and the administration of the organization (members, roles, security settings); spaces with their folders and roles (reader, contributor, maintainer); the import of PDF, Word, Markdown and text files, whose text is extracted in a separate process, with documents restricted to a few people; the reader: Markdown, Word and text laid out and cleaned, PDF files read in the page, a link that opens a document at a section or a page, the download of the original, and the person in charge of each document; and full-text search in the documents a person may read, with filters, a palette (Ctrl K) and results that open at the passage found; the versions of each document, a new one becoming current once its text is extracted, with the history in strata; statuses (draft, published, outdated with the document that replaces it, archived); the activity of each document; and the audit log of the organization, with its CSV export. The scope of the first releases is described under [Planned releases](#planned-releases).
 
-A release candidate, [0.1.0-rc.1](https://github.com/dada-core/lore/releases/tag/v0.1.0-rc.1), holds every feature of version 0.1 and its pass on quality. Its data will carry over to version 0.1.0.
+A release candidate, [0.1.0-rc.2](https://github.com/dada-core/lore/releases/tag/v0.1.0-rc.2), holds every feature of version 0.1 and its pass on quality. Its data will carry over to version 0.1.0.
 
 ## Installation
 

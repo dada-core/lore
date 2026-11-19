@@ -4,7 +4,7 @@ Thank you for your interest in Lore!
 
 ## Current stage
 
-Every feature of v0.1 is in place, with a pass on quality (journeys in real browsers, accessibility, the five minutes of the installation timed, upgrades and restores tested), published in the 0.1.0-rc.1 release candidate before version 0.1.0. The most useful contributions right now are:
+Every feature of v0.1 is in place, with a pass on quality (journeys in real browsers, accessibility, the five minutes of the installation timed, upgrades and restores tested), published in the 0.1.0-rc.2 release candidate before version 0.1.0. The most useful contributions right now are:
 
 - **Feedback on the project's direction.** Open an issue to comment on the scope described in the [README](README.md), ask questions or suggest use cases.
 - **Your experience as a potential user.** If you are a developer, SRE, system administrator or support engineer, tell us where your team's documentation lives today and how you search it.

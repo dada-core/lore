@@ -28,7 +28,10 @@ RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package \
 
 # ---- Runtime ----
 FROM eclipse-temurin:21-jre
-RUN groupadd --system lore \
+# Pebble, the service manager of the Ubuntu base image, is not used by Lore: removed, with the
+# vulnerabilities of its Go build.
+RUN rm -f /usr/bin/pebble \
+    && groupadd --system lore \
     && useradd --system --gid lore --home-dir /var/lib/lore --shell /usr/sbin/nologin lore \
     && mkdir -p /var/lib/lore/files \
     && chown -R lore:lore /var/lib/lore
