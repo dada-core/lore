@@ -48,7 +48,8 @@ test('5.5 5.6: Eli Brou with the keyboard alone, then on a phone', async ({ as, 
     await eli.keyboard.press('Control+k');
     await expect(field).toBeFocused();
     await eli.keyboard.type('inventaire des serveurs');
-    const option = palette.getByRole('option', { name: new RegExp(title.replace(/[()]/g, '\\$&')) });
+    // The name of the option holds the title among other words: a text is looked for, not a pattern.
+    const option = palette.getByRole('option', { name: title });
     await expect(option).toBeVisible();
     for (let presses = 0; presses < 10 && (await option.getAttribute('aria-selected')) !== 'true'; presses++) {
       await eli.keyboard.press('ArrowDown');
