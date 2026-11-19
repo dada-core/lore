@@ -18,4 +18,4 @@ We will acknowledge your report, keep you informed of our progress, and credit y
 
 ## Supported versions
 
-No stable version has been released yet. The [0.1.0-beta.1](https://github.com/dada-core/lore/releases/tag/v0.1.0-beta.1) preview is not a stable version yet: fixes go into the next version, not into the preview. This section will list the supported versions from 0.1.0.
+No stable version has been released yet. The [0.1.0-rc.1](https://github.com/dada-core/lore/releases/tag/v0.1.0-rc.1) release candidate is not a stable version yet: fixes go into the next version, not into the candidate. This section will list the supported versions from 0.1.0.
