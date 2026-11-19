@@ -412,8 +412,10 @@ jobs:
           sudo systemctl enable --now lore
           for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
           curl -fsS localhost:8080/actuator/health/readiness | grep -q '"UP"'
-          # The messages alone, as the logs of a container: the check reads the code two lines lower.
-          sudo journalctl -u lore --no-pager -o cat > "$RUNNER_TEMP/beta.log"
+          # The messages alone, as the logs of a container, once the banner is written. journald drops its
+          # empty lines: the one before the code is put back, since the check reads the code two lines lower.
+          for _ in $(seq 30); do sudo journalctl -u lore --no-pager -o cat | grep -q "enter this setup code" && break; sleep 1; done
+          sudo journalctl -u lore --no-pager -o cat | sed '/enter this setup code/G' > "$RUNNER_TEMP/beta.log"
           sh "$RUNNER_TEMP/import-check.sh" "$RUNNER_TEMP/beta.log"
       - name: The .deb of the branch on top of it
         run: |
