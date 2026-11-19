@@ -1,4 +1,4 @@
-import { api, ApiError, readCookie, reportUnauthenticated, toApiError, type Schemas } from '../api/client';
+import { api, ApiError, csrfToken, reportUnauthenticated, toApiError, tryOtherCsrfCookie, type Schemas } from '../api/client';
 
 /** Where an imported file goes, and who sees it: chosen in the window before it is dropped. */
 export interface ImportFields {
@@ -62,8 +62,9 @@ function form(file: File, fields: ImportFields): FormData {
 
 /**
  * Sends one file to a space with XMLHttpRequest, the only way to follow the progress of what is
- * sent. As with call(), the CSRF token of the XSRF-TOKEN cookie goes along, and a request refused
- * for a missing token is sent again once, after fetching a new one.
+ * sent. As with call(), the CSRF token of its cookie goes along, and a request refused
+ * for a missing token is sent again once, after fetching a new one; with the token of the other
+ * cookie if it is refused again while both are there.
  */
 export function uploadFile(spaceId: string, file: File, fields: ImportFields, onProgress: (fraction: number) => void): Upload {
   return post(`/api/v1/spaces/${encodeURIComponent(spaceId)}/documents`, form(file, fields), onProgress);
@@ -91,7 +92,7 @@ function post(url: string, data: FormData, onProgress: (fraction: number) => voi
     request = xhr;
     xhr.open('POST', url);
     xhr.setRequestHeader('Accept', 'application/json');
-    const token = readCookie('XSRF-TOKEN');
+    const token = csrfToken();
     if (token) xhr.setRequestHeader('X-XSRF-TOKEN', token);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
@@ -103,9 +104,11 @@ function post(url: string, data: FormData, onProgress: (fraction: number) => voi
     xhr.send(data);
   });
 
+  const refusedForCsrf = (answer: Answer) => answer.status === 403 && toApiError(403, answer.body).code === 'csrf';
+
   const done = (async () => {
     let answer = await send();
-    if (answer.status === 403 && toApiError(403, answer.body).code === 'csrf') {
+    if (refusedForCsrf(answer)) {
       try {
         await api.GET('/api/v1/session');
       } catch {
@@ -114,6 +117,13 @@ function post(url: string, data: FormData, onProgress: (fraction: number) => voi
       if (stopped) throw aborted();
       onProgress(0);
       answer = await send();
+      const restore = refusedForCsrf(answer) ? tryOtherCsrfCookie() : null;
+      if (restore) {
+        if (stopped) throw aborted();
+        onProgress(0);
+        answer = await send();
+        if (refusedForCsrf(answer)) restore();
+      }
     }
     if (answer.status >= 200 && answer.status < 300) {
       // Something answered instead of Lore (a proxy, a sign-in page): the file may not have arrived.

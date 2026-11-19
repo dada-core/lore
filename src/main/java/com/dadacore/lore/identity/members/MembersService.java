@@ -24,7 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Administration, Members: roles, deactivation, removal and reset links.
  *
  * <p>Rules: only owners grant, withdraw or act on the owner role; the organization always keeps an
- * active owner; nobody deactivates or removes their own account from this screen.
+ * active owner; nobody deactivates or removes their own account from this screen. An administrator
+ * made member, disabled or removed loses the invitations and reset links they created and that
+ * were not used yet: the audit log counts them ({@code revokedLinks}).
  */
 @Service
 class MembersService {
@@ -32,14 +34,16 @@ class MembersService {
     private final MembershipRepository memberships;
     private final UserAccountRepository accounts;
     private final PasswordResets resets;
+    private final Invitations invitations;
     private final LoginSessions sessions;
     private final AuditLog audit;
 
     MembersService(MembershipRepository memberships, UserAccountRepository accounts, PasswordResets resets,
-            LoginSessions sessions, AuditLog audit) {
+            Invitations invitations, LoginSessions sessions, AuditLog audit) {
         this.memberships = memberships;
         this.accounts = accounts;
         this.resets = resets;
+        this.invitations = invitations;
         this.sessions = sessions;
         this.audit = audit;
     }
@@ -73,12 +77,14 @@ class MembersService {
         }
         requireAnotherOwner(viewer, member);
         memberships.changeRole(viewer.organizationId(), memberId, role);
+        int revoked = member.role().isAdmin() && !role.isAdmin() ? revokeLinksCreatedBy(viewer, memberId) : 0;
         audit.record(AuditEntry.of(viewer.organizationId(), viewer.userId(), "member.role_changed")
                 .resource("account", memberId)
                 .ip(viewer.ip())
                 .detail("name", member.displayName())
                 .detail("before", member.role().name())
                 .detail("after", role.name())
+                .detail("revokedLinks", revoked > 0 ? revoked : null)
                 .build());
         return view(viewer, member(viewer, memberId));
     }
@@ -93,10 +99,12 @@ class MembersService {
         requireAnotherOwner(viewer, member);
         accounts.updateStatus(memberId, AccountStatus.DISABLED);
         resets.revokeAll(memberId);
+        int revoked = revokeLinksCreatedBy(viewer, memberId);
         audit.record(AuditEntry.of(viewer.organizationId(), viewer.userId(), "member.disabled")
                 .resource("account", memberId)
                 .ip(viewer.ip())
                 .detail("name", member.displayName())
+                .detail("revokedLinks", revoked > 0 ? revoked : null)
                 .build());
         sessions.closeAll(memberId, null);
         return view(viewer, member(viewer, memberId));
@@ -127,11 +135,13 @@ class MembersService {
         requireAnotherOwner(viewer, member);
         memberships.remove(viewer.organizationId(), memberId);
         resets.revokeAll(memberId);
+        int revoked = revokeLinksCreatedBy(viewer, memberId);
         audit.record(AuditEntry.of(viewer.organizationId(), viewer.userId(), "member.removed")
                 .resource("account", memberId)
                 .ip(viewer.ip())
                 .detail("name", member.displayName())
                 .detail("email", member.email())
+                .detail("revokedLinks", revoked > 0 ? revoked : null)
                 .build());
         sessions.closeAll(memberId, null);
     }
@@ -144,6 +154,17 @@ class MembersService {
         }
         return resets.create(viewer.organizationId(), accounts.find(memberId).orElseThrow(ApiException::notFound),
                 viewer.userId(), viewer.ip(), baseUrl);
+    }
+
+    /**
+     * The invitations and reset links a person created and that were not used yet: passed on while
+     * they were administrator, they must not outlive that right.
+     *
+     * @return how many were revoked
+     */
+    private int revokeLinksCreatedBy(Viewer viewer, UUID memberId) {
+        return invitations.revokeCreatedBy(viewer.organizationId(), memberId)
+                + resets.revokeCreatedBy(viewer.organizationId(), memberId);
     }
 
     private MemberRow member(Viewer viewer, UUID memberId) {

@@ -4,6 +4,7 @@ import com.dadacore.lore.identity.login.SessionInfo;
 import com.dadacore.lore.identity.login.SessionInfos;
 import com.dadacore.lore.identity.security.LoginSessions;
 import com.dadacore.lore.shared.RequestInfo;
+import com.dadacore.lore.shared.Secrets;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,6 +39,12 @@ class SetupController {
     }
 
     record VerifyCodeRequest(String setupCode) {
+
+        /** The code stays out of the logs. */
+        @Override
+        public String toString() {
+            return "VerifyCodeRequest[setupCode=" + Secrets.hide(setupCode) + "]";
+        }
     }
 
     /** {@code 400} with the field error {@code invalid_setup_code}; {@code 409 setup_done}. */

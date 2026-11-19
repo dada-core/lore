@@ -1,6 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach } from 'vitest';
+
+// A machine under load (CI, two suites at once) can take more than the default second to render a
+// document or a page: what is awaited is found as soon as it shows, a failure only waits longer.
+configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();

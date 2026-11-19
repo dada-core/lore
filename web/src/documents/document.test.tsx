@@ -143,7 +143,7 @@ describe('page of a document', () => {
     open(`/documents/${ID}`);
     const browser = userEvent.setup();
 
-    expect(await screen.findByText(/^Document numérisé\s: son texte n’a pas pu être extrait/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Document numérisé\s: le texte de ses pages numérisées n’a pas pu être extrait/)).toBeInTheDocument();
     expect(screen.getByText(/^Texte tronqué/)).toBeInTheDocument();
     expect(within(screen.getByRole('complementary', { name: 'Propriétés' })).getByText(/^PDF, 4 pages, 1,2\sMo$/)).toBeInTheDocument();
 

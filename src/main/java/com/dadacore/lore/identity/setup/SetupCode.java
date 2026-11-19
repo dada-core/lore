@@ -3,7 +3,6 @@ package com.dadacore.lore.identity.setup;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.util.Locale;
 
 import com.dadacore.lore.LoreProperties;
 import org.slf4j.Logger;
@@ -14,7 +13,10 @@ import org.springframework.stereotype.Component;
  * One-time code required by the initial setup, so that the first person to reach a fresh
  * installation cannot take it over. It is printed in the container logs
  * ({@code docker compose logs lore}), or set with {@code LORE_SETUP_CODE} for automated
- * installations.
+ * installations: 12 characters or more, spaces and dashes left aside. A shorter one could be
+ * guessed: Lore does not start with it while the initial setup is not done ({@link SetupBanner}), and
+ * the setup refuses it anyway; an installation set up already starts all the same, the code being of
+ * no use any more. A random code is drawn at each start.
  *
  * <p>After 10 wrong attempts, a random code is replaced by a new one, printed in the logs.
  */
@@ -27,6 +29,7 @@ class SetupCode {
 
     private final SecureRandom random = new SecureRandom();
     private final boolean fromEnvironment;
+    private final boolean tooShort;
     private String code;
     private int failures;
 
@@ -34,6 +37,12 @@ class SetupCode {
         String configured = properties.setupCode();
         this.fromEnvironment = configured != null && !configured.isBlank();
         this.code = fromEnvironment ? configured.strip() : generate();
+        this.tooShort = fromEnvironment && normalize(code).length() < LoreProperties.SETUP_CODE_MIN_LENGTH;
+    }
+
+    /** A code set in LORE_SETUP_CODE too short to be accepted. */
+    boolean tooShort() {
+        return tooShort;
     }
 
     synchronized String current() {
@@ -45,7 +54,7 @@ class SetupCode {
     }
 
     synchronized boolean verify(String candidate) {
-        boolean valid = MessageDigest.isEqual(
+        boolean valid = !tooShort && MessageDigest.isEqual(
                 normalize(code).getBytes(StandardCharsets.UTF_8),
                 normalize(candidate).getBytes(StandardCharsets.UTF_8));
         if (valid) {
@@ -62,7 +71,7 @@ class SetupCode {
 
     private String generate() {
         StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < 12; i++) {
+        for (int i = 0; i < LoreProperties.SETUP_CODE_MIN_LENGTH; i++) {
             if (i > 0 && i % 4 == 0) {
                 builder.append('-');
             }
@@ -72,6 +81,6 @@ class SetupCode {
     }
 
     private static String normalize(String value) {
-        return value == null ? "" : value.replaceAll("[\\s-]", "").toUpperCase(Locale.ROOT);
+        return LoreProperties.normalizeSetupCode(value);
     }
 }

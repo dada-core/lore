@@ -46,9 +46,14 @@ spring:
 server:
   # LORE_PORT, for the packages and the archive; with Docker, change the published port instead.
   port: ${LORE_PORT:8080}
-  # Trusts X-Forwarded-* headers from a reverse proxy on the internal network.
+  # Trusts the X-Forwarded-* headers of the reverse proxies listed in LORE_TRUSTED_PROXIES only:
+  # by default, a proxy on the same machine. Ranges in CIDR notation, separated by commas, for
+  # example "10.0.0.5/32, 192.168.10.0/24" (each one with its "/", read by Tomcat's NetMaskSet).
+  # Empty: no proxy is trusted. A client outside these ranges cannot choose its address.
   forward-headers-strategy: native
   tomcat:
+    remoteip:
+      internal-proxies: "${LORE_TRUSTED_PROXIES:127.0.0.0/8, ::1/128}"
     # The header of the file in an import holds its name: up to 255 characters, several bytes each.
     max-part-header-size: 2KB
   servlet:
@@ -84,3 +89,16 @@ logging:
     # These two write the address of each request, the words searched with it, at the DEBUG level.
     org.springframework.security.web.FilterChainProxy: INFO
     org.springframework.web.servlet.DispatcherServlet: INFO
+    # These write the bodies read and sent at the DEBUG level (passwords, link tokens, setup code),
+    # and the values given to SQL statements at the TRACE level.
+    org.springframework.web.servlet.mvc.method.annotation: INFO
+    org.springframework.jdbc.core.StatementCreatorUtils: INFO
+    # Tomcat writes each raw request, its cookies and its body, at the TRACE level.
+    org.apache.coyote.http11: INFO
+    # These write the words searched and the session cookie: the arguments of each controller call
+    # and the address of each request checked (TRACE), the parameters and cookies read by Tomcat
+    # (DEBUG), the values sent to PostgreSQL (TRACE). SecretsInLogsTests checks it.
+    org.springframework.web.method.HandlerMethod: INFO
+    org.springframework.security.web: INFO
+    org.apache.tomcat.util.http: INFO
+    org.postgresql: INFO

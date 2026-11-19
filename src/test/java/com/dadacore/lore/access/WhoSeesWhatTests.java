@@ -15,6 +15,8 @@ import java.util.stream.Stream;
 import com.dadacore.lore.support.ApiTest;
 import com.dadacore.lore.support.Browser;
 import com.dadacore.lore.support.Response;
+import com.dadacore.lore.support.RouteLog;
+import com.dadacore.lore.support.RouteMatrix;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
@@ -57,6 +59,8 @@ class WhoSeesWhatTests extends ApiTest {
         String folders = infrastructure + "/folders";
         String members = infrastructure + "/members";
         List<Probe> probes = List.of(
+                // The spaces: each person lists those they see (what they see, below).
+                probe("GET /spaces", p -> as(p).get("/api/v1/spaces"), 200, 200, 200, 200, 200, 200, 401),
                 // The space
                 probe("GET /spaces/{id}", p -> as(p).get(infrastructure),
                         200, 200, 200, 200, 200, 404, 401),
@@ -121,14 +125,17 @@ class WhoSeesWhatTests extends ApiTest {
                         body("name", "Intrus")),
                         404, 404, 404, 404, 404, 404, 401));
 
-        return probes.stream().flatMap(probe -> Arrays.stream(Person.values()).map(person -> {
+        Stream<DynamicTest> answers = probes.stream().flatMap(probe -> Arrays.stream(Person.values()).map(person -> {
             int expected = probe.expected()[person.ordinal()];
             String name = probe.route() + " as " + person.name().toLowerCase() + " gives " + expected;
             return DynamicTest.dynamicTest(name, () -> {
-                Response response = probe.call().apply(person);
+                Response response = RouteLog.probe(WhoSeesWhatTests.class, () -> probe.call().apply(person));
                 assertThat(response.status()).as(name + ", got " + response).isEqualTo(expected);
             });
         }));
+        // Last: every route this matrix answers for in RouteMatrix was probed above.
+        return Stream.concat(answers, Stream.of(DynamicTest.dynamicTest("every route of the matrix is probed",
+                () -> RouteMatrix.assertProbed(WhoSeesWhatTests.class))));
     }
 
     @Test

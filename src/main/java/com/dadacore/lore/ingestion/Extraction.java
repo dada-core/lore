@@ -7,7 +7,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * The text extracted from a file, cut into chunks.
  *
- * @param scanned      a PDF where at least half of the pages have no text: an image of a document
+ * @param scanned      a PDF where at least half of the pages are images without text (fewer than 20
+ *                     visible characters and an image on the page): a scanned document
  * @param language     {@code fr}, {@code en} or {@code other}
  * @param pageCount    the number of pages of a PDF; null for the other formats
  * @param truncated    true when the text went beyond the maximum kept, which was cut

@@ -62,7 +62,7 @@ class SearchesTests {
 
     @Test
     void aWebAddressIsSearchedWithoutItsScheme() {
-        assertThat(Searches.prepare("https://lore.dada.group/docs/install")).isEqualTo("lore.dada.group/docs/install");
+        assertThat(Searches.prepare("https://lore.example.com/docs/install")).isEqualTo("lore.example.com/docs/install");
         assertThat(Searches.prepare("voir HTTP://intranet/wiki et ssh://node-01")).isEqualTo("voir intranet/wiki et node-01");
         // A path of Windows, or an error code, keep their colon.
         assertThat(Searches.prepare("C:\\Windows\\System32")).isEqualTo("C:\\Windows\\System32");

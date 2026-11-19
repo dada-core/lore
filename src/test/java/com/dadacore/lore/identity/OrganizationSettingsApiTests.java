@@ -38,15 +38,15 @@ class OrganizationSettingsApiTests extends ApiTest {
 
         Response updated = owner.patch("/api/v1/admin/organization", body(
                 "name", "DadaGroup Réseaux",
-                "publicUrl", "https://lore.dada.group/",
+                "publicUrl", "https://lore.example.com/",
                 "passwordMinLength", 16,
                 "loginLockoutMinutes", 60));
 
         assertThat(updated.status()).isEqualTo(200);
-        assertThat(updated.text("publicUrl")).isEqualTo("https://lore.dada.group");
+        assertThat(updated.text("publicUrl")).isEqualTo("https://lore.example.com");
         assertThat(owner.get("/api/v1/session").text("organization.name")).isEqualTo("DadaGroup Réseaux");
         Response invitation = owner.post("/api/v1/admin/invitations", body("role", "MEMBER"));
-        assertThat(invitation.text("url")).startsWith("https://lore.dada.group/join#");
+        assertThat(invitation.text("url")).startsWith("https://lore.example.com/join#");
         Response shortPassword = owner.put("/api/v1/account/password",
                 body("currentPassword", PASSWORD, "newPassword", "only-15-chars!!", "signOutOtherSessions", false));
         assertThat(shortPassword.fieldErrors()).containsExactly("newPassword:too_short");

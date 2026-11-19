@@ -307,9 +307,12 @@ describe('Administration › Audit log', () => {
     expect(screen.getByText('10.0.0.4')).toBeInTheDocument();
     expect(asked[0].searchParams.get('from')).not.toBeNull();
 
-    await browser.click(screen.getByRole('button', { name: 'Catégorie' }));
+    // Each filter says its value in its name, as it shows it (WCAG 2.5.3).
+    await browser.click(screen.getByRole('button', { name: /^Catégorie\s:\sToutes les catégories$/ }));
     await browser.click(await screen.findByRole('menuitemradio', { name: 'Statut' }));
     await waitFor(() => expect(asked.at(-1)?.searchParams.get('category')).toBe('status'));
+    expect(screen.getByRole('button', { name: /^Catégorie\s:\sStatut$/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Personne\s:\sTout le monde$/ })).toBeInTheDocument();
     await browser.click(screen.getByRole('button', { name: 'Exporter en CSV' }));
     expect(assign).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/v1\/admin\/audit\/export\?category=status&from=/));
   });

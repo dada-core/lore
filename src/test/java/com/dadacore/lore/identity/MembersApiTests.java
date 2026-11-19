@@ -17,6 +17,8 @@ class MembersApiTests extends ApiTest {
 
     private static final String AMENAN = "amenan.souaga@dada.group";
     private static final String HERVE = "herve.coulibaly@dada.group";
+    private static final String ELI = "eli.brou@dada.group";
+    private static final String CHRIST = "christ.koffi@dada.group";
 
     @Test
     void membersAreListedByNameAndSearchedWithoutAccents() {
@@ -137,5 +139,69 @@ class MembersApiTests extends ApiTest {
         owner.patch("/api/v1/admin/members/" + userId(HERVE), body("role", "ADMIN"));
 
         assertThat(herve.get("/api/v1/admin/members").status()).isEqualTo(200);
+    }
+
+    @Test
+    void anAdministratorMadeMemberLosesTheInvitationsTheyCreated() {
+        Browser owner = setUpOrganization();
+        Browser eli = join(owner, "ADMIN", "Eli Brou", ELI);
+        Browser amenan = join(owner, "ADMIN", "Amenan Souaga", AMENAN);
+        String eliInvitation = token(eli.post("/api/v1/admin/invitations", body("role", "ADMIN")).text("url"));
+        String amenanInvitation = token(amenan.post("/api/v1/admin/invitations", body("role", "ADMIN")).text("url"));
+
+        assertThat(owner.patch("/api/v1/admin/members/" + userId(ELI), body("role", "MEMBER")).text("role"))
+                .isEqualTo("MEMBER");
+
+        Response accepted = browser().post("/api/v1/invitations/accept", body(
+                "token", eliInvitation, "displayName", "Elfried Yaba", "email", "elfried.yaba@dada.group", "password", PASSWORD));
+        assertThat(accepted.status()).isEqualTo(404);
+        assertThat(accepted.code()).isEqualTo("invalid_link");
+        assertThat(browser().post("/api/v1/invitations/inspect", body("token", amenanInvitation)).status())
+                .as("the links of another administrator stay valid").isEqualTo(200);
+        assertThat(jdbc.sql("select details::text from audit_event where action = 'member.role_changed'")
+                .query(String.class).single()).contains("\"revokedLinks\": 1");
+    }
+
+    @Test
+    void anAdministratorMadeMemberLosesTheResetLinksTheyCreated() {
+        Browser owner = setUpOrganization();
+        Browser eli = join(owner, "ADMIN", "Eli Brou", ELI);
+        Browser amenan = join(owner, "ADMIN", "Amenan Souaga", AMENAN);
+        join(owner, "MEMBER", "Hervé Coulibaly", HERVE);
+        join(owner, "MEMBER", "Christ Koffi", CHRIST);
+        String eliLink = token(eli.post("/api/v1/admin/members/" + userId(HERVE) + "/password-reset-link").text("url"));
+        String amenanLink = token(amenan.post("/api/v1/admin/members/" + userId(CHRIST) + "/password-reset-link").text("url"));
+
+        owner.patch("/api/v1/admin/members/" + userId(ELI), body("role", "MEMBER"));
+
+        Response reset = browser().post("/api/v1/password-reset/complete", body("token", eliLink, "password", "a-brand-new-passphrase"));
+        assertThat(reset.status()).isEqualTo(404);
+        assertThat(reset.code()).isEqualTo("invalid_link");
+        assertThat(browser().post("/api/v1/password-reset/inspect", body("token", amenanLink)).status())
+                .as("the links of another administrator stay valid").isEqualTo(200);
+    }
+
+    @Test
+    void anAdministratorDisabledOrRemovedLosesTheLinksTheyCreated() {
+        Browser owner = setUpOrganization();
+        Browser eli = join(owner, "ADMIN", "Eli Brou", ELI);
+        Browser amenan = join(owner, "ADMIN", "Amenan Souaga", AMENAN);
+        join(owner, "MEMBER", "Hervé Coulibaly", HERVE);
+        String eliInvitation = token(eli.post("/api/v1/admin/invitations", body("role", "MEMBER")).text("url"));
+        String eliLink = token(eli.post("/api/v1/admin/members/" + userId(HERVE) + "/password-reset-link").text("url"));
+        String amenanInvitation = token(amenan.post("/api/v1/admin/invitations", body("role", "MEMBER")).text("url"));
+
+        owner.post("/api/v1/admin/members/" + userId(ELI) + "/disable");
+
+        assertThat(browser().post("/api/v1/invitations/inspect", body("token", eliInvitation)).code()).isEqualTo("invalid_link");
+        assertThat(browser().post("/api/v1/password-reset/inspect", body("token", eliLink)).code()).isEqualTo("invalid_link");
+        assertThat(jdbc.sql("select details::text from audit_event where action = 'member.disabled'")
+                .query(String.class).single()).contains("\"revokedLinks\": 2");
+
+        owner.delete("/api/v1/admin/members/" + userId(AMENAN));
+
+        assertThat(browser().post("/api/v1/invitations/inspect", body("token", amenanInvitation)).code()).isEqualTo("invalid_link");
+        assertThat(jdbc.sql("select details::text from audit_event where action = 'member.removed'")
+                .query(String.class).single()).contains("\"revokedLinks\": 1");
     }
 }

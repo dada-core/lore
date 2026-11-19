@@ -18,6 +18,7 @@ import com.dadacore.lore.identity.organization.PublicUrl;
 import com.dadacore.lore.identity.security.PasswordHasher;
 import com.dadacore.lore.shared.ApiException;
 import com.dadacore.lore.shared.Checks;
+import com.dadacore.lore.shared.Secrets;
 import com.dadacore.lore.shared.Slugs;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -74,6 +75,14 @@ class SetupService {
             String displayName,
             String email,
             String password) {
+
+        /** The setup code and the password stay out of the logs. */
+        @Override
+        public String toString() {
+            return "SetupRequest[setupCode=" + Secrets.hide(setupCode) + ", organizationName=" + organizationName
+                    + ", publicUrl=" + publicUrl + ", locale=" + locale + ", timeZone=" + timeZone
+                    + ", displayName=" + displayName + ", email=" + email + ", password=" + Secrets.hide(password) + "]";
+        }
     }
 
     record SetupResult(UUID userId, UUID organizationId, int sessionTimeoutMinutes) {

@@ -10,6 +10,8 @@ h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: 600; }
 p { margin: 0; }
 h1:focus { outline: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 5px; }
+/* WebKit (Safari) drops :focus-visible from a radio button chosen with the arrows: any focus shows. */
+input[type="radio"]:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 .ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -27,8 +29,8 @@ html, body, * { scrollbar-width: none; -ms-overflow-style: none; }
 .btn:hover { background: var(--bg-hover); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: none; }
 .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; box-shadow: none; }
-.btn-danger:hover { background: color-mix(in srgb, var(--danger) 88%, #000); border-color: color-mix(in srgb, var(--danger) 88%, #000); }
+.btn-danger { background: var(--danger-solid); border-color: var(--danger-solid); color: #fff; box-shadow: none; }
+.btn-danger:hover { background: color-mix(in srgb, var(--danger-solid) 88%, #000); border-color: color-mix(in srgb, var(--danger-solid) 88%, #000); }
 .btn-ghost { border-color: transparent; background: transparent; box-shadow: none; color: var(--text-2); }
 .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
 .btn-lg { height: 38px; padding: 0 16px; font-size: 14px; }
@@ -247,7 +249,8 @@ dialog.modal > form, dialog.modal > .modal-inner { display: flex; flex-direction
 .steps li[aria-current="step"] .n { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
 .steps li.done .n { border-color: var(--accent); color: var(--accent-text); }
 .steps li + li::before { content: ""; width: 24px; height: 1px; background: var(--border-strong); }
-.command { display: block; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-subtle); color: var(--text); font: 12.5px/1.5 var(--mono); overflow-x: auto; white-space: nowrap; user-select: all; }
+/* A command to type: it wraps rather than scroll, which the keyboard could not reach. */
+.command { display: block; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-subtle); color: var(--text); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .auth-panel .stack-sm { display: flex; flex-direction: column; gap: 6px; }
 .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 64px 20px; max-width: 520px; margin: 0 auto; }
 .empty p { color: var(--text-2); }
@@ -280,8 +283,9 @@ dialog.modal > form, dialog.modal > .modal-inner { display: flex; flex-direction
 /* ---------- Small screens ---------- */
 @media (max-width: 960px) {
   .app { grid-template-columns: minmax(0, 1fr); }
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 268px; z-index: 30; transform: translateX(-102%); transition: transform .2s ease; }
-  .sidebar.is-open { transform: none; box-shadow: var(--shadow-lg); }
+  /* Closed, the drawer is hidden once it has slid out: neither the keyboard nor a screen reader reaches it. */
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 268px; z-index: 30; transform: translateX(-102%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s; }
+  .sidebar.is-open { transform: none; visibility: visible; box-shadow: var(--shadow-lg); transition: transform .2s ease; }
   .side-collapse { display: none; }
   .menu-btn { display: inline-grid; }
   .view-header { padding: 0 10px; }
@@ -422,7 +426,8 @@ dialog.modal.modal-lg { width: min(720px, calc(100% - 32px)); }
 .file-state > span:last-child { flex: 1 1 auto; min-width: 0; }
 .file-state .ico { width: 14px; height: 14px; margin-top: 2px; }
 .file-state .link { font-size: 12.5px; }
-.is-ok { color: var(--st-published); }
+/* Text in the colour of a success: darker than the dot of a status, for its contrast (4.5:1). */
+.is-ok { color: var(--ok-text); }
 .is-warn { color: var(--warn-text); }
 .is-err { color: var(--danger); }
 .is-busy { color: var(--text-2); }
@@ -559,6 +564,8 @@ mark.found-mark { background: var(--mark); color: var(--mark-ink); border-radius
   .doc-view { grid-template-columns: minmax(0, 1fr); }
   .props { position: static; height: auto; border-left: 0; border-top: 1px solid var(--border); }
   .doc-main { padding: 20px 16px 40px; }
+  /* The band of the passage found stays within the margins of the page. */
+  .is-found, .is-pointed { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
 }
 
 /* Search: the field of the sidebar, the palette (Ctrl K), the page of the results. */

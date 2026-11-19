@@ -2,9 +2,9 @@
 
 **Technical Knowledge Workspace**
 
-Lore is an open source workspace where technical teams write, import, organize, search, validate and maintain their technical knowledge: documentation, architecture documents, runbooks, procedures and incident reports.
+Lore is an open source workspace where technical teams import, organize, search and maintain their technical knowledge: documentation, architecture documents, runbooks, procedures and incident reports. Approving documents (v0.2) and writing them in Lore (later) are planned.
 
-> **Lore is not a chatbot.** It is a complete workspace. An optional assistant can answer questions in natural language, but it is one way in among others, and the platform is fully usable without it.
+> **Lore is not a chatbot.** It is a complete workspace. An optional assistant, planned for v0.3, will answer questions in natural language, but it will be one way in among others, and the platform is fully usable without it.
 
 ## Status
 
@@ -20,7 +20,7 @@ From version 0.1, Lore installs on your own servers in three ways, with PostgreS
 - **.deb and .rpm packages**: Ubuntu 22.04, 24.04 and 26.04 LTS, Debian 12 and 13, RHEL, Rocky Linux and AlmaLinux 8, 9 and 10, for amd64 and arm64. Lore runs as a systemd service, with its own Java runtime.
 - **Universal archive**: any system with Java 21 or later, Windows and macOS included.
 
-Each release publishes these files on the [releases page](https://github.com/dada-core/lore/releases). See the [installation guide](https://lore.dada-core.com/docs/installation/).
+Each release publishes these files on the [releases page](https://github.com/dada-core/lore/releases). See the [installation guide](https://lore.dada-core.com/en/docs/installation/).
 
 ## Try it from source
 
@@ -38,34 +38,36 @@ To work on the code, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## What Lore brings together
 
-| Area | Purpose |
-|---|---|
-| Library | Spaces, folders and documents: import, writing, preview, versions |
-| Search | Full-text and semantic search, filters, excerpts |
-| Knowledge base | Problem / solution records and validated lessons learned |
-| Governance | Statuses, reviews, owners, permissions, audit logs |
-| Connected sources | Connectors to the tools teams already use |
-| Assistant (optional) | Natural-language questions with sourced answers |
-| Insights | Usage, outdated documents, documentation gaps |
+Only what is marked v0.1 exists today; the rest is planned.
+
+| Area | Purpose | Release |
+|---|---|---|
+| Library | Spaces, folders and documents: import, preview, versions | v0.1 (writing in Lore: later) |
+| Search | Full-text search, filters, excerpts | v0.1 (semantic search: v0.2) |
+| Knowledge base | Problem / solution records and validated lessons learned | v0.2 |
+| Governance | Statuses, owners, permissions, audit logs | v0.1 (reviews: v0.2) |
+| Connected sources | Connectors to the tools teams already use | Later |
+| Assistant (optional) | Natural-language questions with sourced answers | v0.3 |
+| Insights | Usage, outdated documents, documentation gaps | v0.2 |
 
 ## Principles
 
-- **Permissions first.** No one ever sees content from a document they cannot access: not in search results, not in excerpts, not through the assistant.
+- **Permissions first.** No one ever sees content from a document they cannot access: not in search results, not in excerpts, and not through the assistant planned for v0.3.
 - **Sourced and verifiable.** Every result links back to the document, version and passage it comes from.
-- **Works without AI.** The assistant is an optional module that organizations can turn off.
+- **Works without AI.** The assistant, planned for v0.3, will be an optional module that organizations can turn off.
 - **Easy to self-host.** Lore and PostgreSQL, nothing else: a Docker image, a .deb or .rpm package, or an archive. Goal: up and running in under five minutes.
 
 ## Planned releases
 
 | Version | Scope |
 |---|---|
-| v0.1 | Accounts, organizations, spaces, permissions, PDF/DOCX/TXT/Markdown import, document viewer, permission-aware full-text search, basic versioning |
-| v0.2 | Semantic search, knowledge base records, dashboard |
+| v0.1 | Accounts, the organization, spaces, permissions, PDF/DOCX/TXT/Markdown import, document viewer, permission-aware full-text search, basic versioning |
+| v0.2 | Semantic search, knowledge base records, dashboard, review dates and approval workflow |
 | v0.3 | Optional assistant, conversation history |
 
 ## License
 
-Lore is open core. The Community edition is licensed under the [GNU Affero General Public License v3.0](LICENSE). Features of the paid editions will live in a separate `ee/` directory under a commercial license.
+Lore is open source, licensed under the [GNU Affero General Public License v3.0](LICENSE). Every feature is free: there is no paid edition.
 
 ## Contributing
 

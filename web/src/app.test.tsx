@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
@@ -8,6 +8,7 @@ import { setUnauthenticatedHandler } from './api/client';
 import { queryClient } from './api/queryClient';
 import { routes } from './router';
 import { expireSession, forgetSignOutReason } from './session/session';
+import { space } from './test/documents';
 import { amenan, fakeServer, json, noContent, organization } from './test/server';
 import { ToastProvider } from './ui/Toast';
 
@@ -45,6 +46,49 @@ describe('access', () => {
     expect(router.state.location.pathname).toBe('/setup');
   });
 
+  it('sets Lore up in three steps, then offers to invite the team and to set the security', async () => {
+    let done = false;
+    fakeServer({
+      'GET /api/v1/session': () => json(done
+        ? { setupRequired: false, organization, user: amenan }
+        : { setupRequired: true, organization: null, user: null }),
+      'GET /api/v1/setup': () => json({ required: true, publicUrl: 'https://lore.example.com', publicUrlFromEnvironment: true }),
+      'POST /api/v1/setup/verify-code': () => noContent(),
+      'POST /api/v1/setup': () => {
+        done = true;
+        return json({ setupRequired: false, organization, user: amenan }, 201);
+      },
+    });
+    // Before the organization exists, the page speaks the language of the browser: English here.
+    open('/setup');
+    // About 120 keys: without a pause between them, the test stays short on a machine under load.
+    const browser = userEvent.setup({ delay: null });
+    await browser.type(await screen.findByLabelText('Setup code'), 'K7QF-2M9P-XW4D');
+    await browser.type(screen.getByLabelText('Organization name'), 'DadaGroup');
+    await browser.click(screen.getByRole('button', { name: 'Continue' }));
+    await browser.type(await screen.findByLabelText('Full name'), 'Amenan Souaga');
+    await browser.type(screen.getByLabelText('E-mail'), 'amenan.souaga@dada.group');
+    await browser.type(screen.getByLabelText('Password'), 'un-mot-de-passe-solide');
+    await browser.type(screen.getByLabelText('Confirmation'), 'un-mot-de-passe-solide');
+    await browser.click(screen.getByRole('button', { name: 'Create the account' }));
+
+    // Then in the language chosen for the organization.
+    expect(await screen.findByRole('heading', { name: /^DadaGroup est prête/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Inviter votre équipe/ })).toHaveAttribute('href', '/admin/members?open=invite');
+    expect(screen.getByRole('link', { name: /Régler la sécurité/ })).toHaveAttribute('href', '/admin/security');
+    expect(screen.getByRole('link', { name: 'Ouvrir Lore' })).toHaveAttribute('href', '/');
+  });
+
+  it('says how to get a new password, without e-mail', async () => {
+    fakeServer({ 'GET /api/v1/session': () => json({ setupRequired: false, organization, user: null }) });
+    const router = open('/login');
+    await userEvent.setup().click(await screen.findByRole('link', { name: /^Mot de passe oublié/ }));
+    expect(await screen.findByRole('heading', { name: 'Mot de passe oublié' })).toBeInTheDocument();
+    expect(screen.getByText(/Demandez à un administrateur de votre organisation de générer un lien de réinitialisation/)).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/forgot-password');
+    expect(screen.getByRole('link', { name: 'Retour à la connexion' })).toHaveAttribute('href', '/login');
+  });
+
   it('asks to sign in, then opens the requested address', async () => {
     let user: typeof amenan | null = null;
     fakeServer({
@@ -63,7 +107,7 @@ describe('access', () => {
     const router = open('/account');
 
     // On a cold start of the tests, the sign-in screen can take more than the default second to appear.
-    expect(await screen.findByRole('heading', { name: 'Connexion à Lore' }, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Connexion à Lore' })).toBeInTheDocument();
     expect(router.state.location.search).toBe('?next=%2Faccount');
     expect(screen.getByText('DadaGroup')).toBeInTheDocument();
 
@@ -86,11 +130,14 @@ describe('access', () => {
       'GET /api/v1/session': () => json({ setupRequired: false, organization, user: null }),
     });
     open('/login');
-    const browser = userEvent.setup();
-    await browser.type(await screen.findByLabelText('E-mail'), 'pas-une-adresse');
+    // Once unstable under load: no pause between the keys, and the time it takes to
+    // show the page, and then the problem, waited for rather than assumed.
+    const browser = userEvent.setup({ delay: null });
+    const field = await screen.findByLabelText('E-mail');
+    await browser.type(field, 'pas-une-adresse');
     await browser.click(screen.getByRole('button', { name: 'Se connecter' }));
-    expect(screen.getByLabelText('E-mail')).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByLabelText('E-mail')).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText('E-mail')).toHaveAttribute('aria-invalid', 'true'));
+    await waitFor(() => expect(screen.getByLabelText('E-mail')).toHaveFocus());
     expect(server.requests.filter((request) => request.method === 'POST')).toHaveLength(0);
   });
 
@@ -118,6 +165,22 @@ describe('signed in', () => {
     expect(screen.queryByRole('link', { name: 'Administration' })).not.toBeInTheDocument();
   });
 
+  it('keeps the theme chosen in My account in this browser', async () => {
+    fakeServer({
+      'GET /api/v1/session': session,
+      'GET /api/v1/account': () => json({ displayName: 'Amenan Souaga', email: 'amenan.souaga@dada.group', interfaceLocale: null, locale: 'fr', passwordMinLength: 12, role: 'MEMBER' }),
+      'GET /api/v1/account/sessions': () => json([]),
+    });
+    open('/account');
+    const browser = userEvent.setup();
+    await browser.selectOptions(await screen.findByRole('combobox', { name: 'Thème' }), 'Sombre');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+    expect(localStorage.getItem('lore.theme')).toBe('dark');
+    await browser.selectOptions(screen.getByRole('combobox', { name: 'Thème' }), 'Système');
+    expect(document.documentElement).not.toHaveAttribute('data-theme');
+    expect(localStorage.getItem('lore.theme')).toBe('system');
+  });
+
   it('greets the person and signs out', async () => {
     fakeServer({ 'GET /api/v1/session': session, 'POST /api/v1/auth/logout': () => noContent() });
     const router = open('/');
@@ -126,6 +189,28 @@ describe('signed in', () => {
     expect(await screen.findByText('Déconnexion effectuée.')).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/login');
     expect(router.state.location.search).toBe('');
+  });
+
+  it('gives the focus to the new view when a link of the drawer opens a space still loading', async () => {
+    // A phone: the sidebar is a drawer.
+    vi.stubGlobal('matchMedia', (media: string) => ({ matches: true, media, addEventListener() {}, removeEventListener() {} }));
+    fakeServer({
+      'GET /api/v1/session': session,
+      'GET /api/v1/spaces': () => json([space()]),
+      // The space never answers: its view shows its header, not yet its title.
+      'GET /api/v1/spaces/by-slug/infrastructure': () => new Promise<Response>(() => {}),
+    });
+    const router = open('/');
+    const browser = userEvent.setup({ delay: null });
+    await screen.findByRole('heading', { name: 'Bonjour, Amenan' });
+    await browser.click(screen.getByRole('button', { name: 'Afficher la barre latérale' }));
+    const link = await within(document.getElementById('sidebar') as HTMLElement).findByRole('link', { name: /Infrastructure/ });
+    await waitFor(() => expect(document.getElementById('sidebar')).toContainElement(document.activeElement as HTMLElement));
+    await browser.click(link);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/spaces/infrastructure'));
+    await waitFor(() => expect(document.activeElement).toHaveAccessibleName('Afficher la barre latérale'));
+    expect(document.getElementById('sidebar')).not.toContainElement(document.activeElement as HTMLElement);
   });
 
   it('goes back to the sign-in page when the session has expired', async () => {
@@ -151,10 +236,15 @@ describe('links received', () => {
     expect(await screen.findByText(/Ce lien d.invitation n.est plus valable/)).toBeInTheDocument();
   });
 
-  it('creates the account from an invitation and opens Lore', async () => {
+  it('creates the account from an invitation and opens the first space it adds', async () => {
     let joined = false;
     fakeServer({
       'GET /api/v1/session': () => json({ setupRequired: false, organization, user: joined ? amenan : null }),
+      'GET /api/v1/spaces/0193b1f2-0000-7000-8000-0000000000a1': () => json({
+        id: '0193b1f2-0000-7000-8000-0000000000a1', name: 'Infrastructure', slug: 'infrastructure', color: '#13705E',
+        description: null, role: 'CONTRIBUTOR', documentCount: 9, memberCount: 7, archivedAt: null,
+        createdAt: '2026-11-01T10:00:00Z', lastActivityAt: '2026-11-18T10:00:00Z',
+      }),
       'POST /api/v1/invitations/inspect': () => json({
         organizationName: 'DadaGroup', invitedBy: 'Wilfried Kouakou', role: 'MEMBER', email: null,
         expiresAt: '2026-11-19T10:00:00Z', passwordMinLength: 12,
@@ -180,8 +270,33 @@ describe('links received', () => {
     await browser.type(screen.getByLabelText('Confirmation'), 'un-mot-de-passe-solide');
     await browser.click(screen.getByRole('button', { name: 'Créer mon compte' }));
 
-    expect(await screen.findByRole('heading', { name: 'Bonjour, Amenan' })).toBeInTheDocument();
+    expect(await screen.findByText('Bienvenue dans l’espace Infrastructure')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/spaces/infrastructure');
     expect(router.state.location.hash).toBe('');
+  });
+
+  it('opens the home page when the invitation adds no space', async () => {
+    let joined = false;
+    fakeServer({
+      'GET /api/v1/session': () => json({ setupRequired: false, organization, user: joined ? amenan : null }),
+      'POST /api/v1/invitations/inspect': () => json({
+        organizationName: 'DadaGroup', invitedBy: null, role: 'MEMBER', email: 'amenan.souaga@dada.group',
+        expiresAt: '2026-11-19T10:00:00Z', passwordMinLength: 12, spaces: [],
+      }),
+      'POST /api/v1/invitations/accept': () => {
+        joined = true;
+        return json({ setupRequired: false, organization, user: amenan }, 201);
+      },
+    });
+    const router = open('/join#jeton');
+    const browser = userEvent.setup();
+    await browser.type(await screen.findByLabelText('Nom complet'), 'Amenan Souaga');
+    await browser.type(screen.getByLabelText('Mot de passe'), 'un-mot-de-passe-solide');
+    await browser.type(screen.getByLabelText('Confirmation'), 'un-mot-de-passe-solide');
+    await browser.click(screen.getByRole('button', { name: 'Créer mon compte' }));
+
+    expect(await screen.findByRole('heading', { name: 'Bonjour, Amenan' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/');
     expect(screen.getByText('Bienvenue dans DadaGroup')).toBeInTheDocument();
   });
 });

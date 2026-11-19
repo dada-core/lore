@@ -70,6 +70,116 @@ class AccountApiTests extends ApiTest {
     }
 
     @Test
+    void theCurrentPasswordIsCountedLikeASignIn() {
+        Browser owner = setUpOrganization();
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            Response wrong = attempt % 2 == 0
+                    ? owner.put("/api/v1/account/email", body("email", "wilfried@dada.group", "currentPassword", "guess-" + attempt))
+                    : owner.put("/api/v1/account/password", body("currentPassword", "guess-" + attempt,
+                            "newPassword", "another-long-passphrase", "signOutOtherSessions", false));
+            assertThat(wrong.fieldErrors()).as(wrong.toString()).containsExactly("currentPassword:wrong_password");
+        }
+
+        Response fifth = owner.put("/api/v1/account/password", body("currentPassword", "guess-5",
+                "newPassword", "another-long-passphrase", "signOutOtherSessions", false));
+        assertThat(fifth.status()).as(fifth.toString()).isEqualTo(429);
+        assertThat(fifth.code()).isEqualTo("login_locked");
+        assertThat(fifth.number("retryAfterMinutes")).isEqualTo(15);
+
+        Response evenWithTheRightPassword = owner.put("/api/v1/account/email",
+                body("email", "wilfried@dada.group", "currentPassword", PASSWORD));
+        assertThat(evenWithTheRightPassword.status()).as(evenWithTheRightPassword.toString()).isEqualTo(429);
+        assertThat(evenWithTheRightPassword.code()).isEqualTo("login_locked");
+        assertThat(owner.get("/api/v1/account").text("email")).isEqualTo(OWNER_EMAIL);
+        // The same counters as the sign-in: from this machine, signing in is blocked as well.
+        assertThat(browser().post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", PASSWORD)).status())
+                .isEqualTo(429);
+        assertThat(auditActions()).containsSequence("auth.login_failed", "auth.login_failed", "auth.login_failed",
+                "auth.login_failed", "auth.login_failed", "auth.locked");
+        assertThat(jdbc.sql("select count(*) from audit_event where action = 'auth.login_failed' and actor_id = ?")
+                .param(userId(OWNER_EMAIL)).query(Integer.class).single()).isEqualTo(5);
+    }
+
+    @Test
+    void aBlockFromEverywhereDoesNotKeepTheSignedInPersonFromChangingTheirPassword() {
+        Browser owner = setUpOrganization();
+        // An attack spread over many machines: the address is blocked from everywhere.
+        for (int attempt = 1; attempt <= 20; attempt++) {
+            browser().from("203.0.113." + attempt)
+                    .post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", "guess-" + attempt));
+        }
+        assertThat(browser().from("198.51.100.20").post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", PASSWORD))
+                .status()).isEqualTo(429);
+
+        // Signed in already, the owner proves they know the password and changes it.
+        Response changed = owner.put("/api/v1/account/password", body("currentPassword", PASSWORD,
+                "newPassword", "another-long-passphrase", "signOutOtherSessions", false));
+        assertThat(changed.status()).as(changed.toString()).isEqualTo(200);
+
+        // A new password: the guesses against the former one no longer block the address.
+        assertThat(browser().from("198.51.100.20").post("/api/v1/auth/login",
+                body("email", OWNER_EMAIL, "password", "another-long-passphrase")).status()).isEqualTo(200);
+    }
+
+    @Test
+    void aStolenSessionGetsNoMoreGuessesFromManyMachines() {
+        Browser owner = setUpOrganization();
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            Response wrong = owner.from("203.0.113." + attempt).put("/api/v1/account/password", body("currentPassword",
+                    "guess-" + attempt, "newPassword", "another-long-passphrase", "signOutOtherSessions", false));
+            assertThat(wrong.fieldErrors()).as(wrong.toString()).containsExactly("currentPassword:wrong_password");
+        }
+
+        // A fifth machine: the session itself is blocked, whatever the address it comes from.
+        Response fifth = owner.from("203.0.113.5").put("/api/v1/account/password", body("currentPassword", "guess-5",
+                "newPassword", "another-long-passphrase", "signOutOtherSessions", false));
+        assertThat(fifth.status()).as(fifth.toString()).isEqualTo(429);
+        assertThat(owner.from("203.0.113.6").put("/api/v1/account/email",
+                body("email", "wilfried@dada.group", "currentPassword", PASSWORD)).status()).isEqualTo(429);
+
+        // Signing in, from another machine, is still open: five failures are far from the block from everywhere.
+        assertThat(browser().from("198.51.100.20").post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", PASSWORD))
+                .status()).isEqualTo(200);
+    }
+
+    @Test
+    void aTypoDuringABlockFromEverywhereIsNotABlock() {
+        Browser owner = setUpOrganization();
+        for (int attempt = 1; attempt <= 20; attempt++) {
+            browser().from("203.0.113." + attempt)
+                    .post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", "guess-" + attempt));
+        }
+
+        String blockEnd = "select locked_until::text from login_throttle where key like 'address:%'";
+        String before = jdbc.sql(blockEnd).query(String.class).single();
+
+        Response typo = owner.put("/api/v1/account/password", body("currentPassword", "typo-" + PASSWORD,
+                "newPassword", "another-long-passphrase", "signOutOtherSessions", false));
+        assertThat(typo.fieldErrors()).as(typo.toString()).containsExactly("currentPassword:wrong_password");
+        // The block from everywhere is neither pushed back nor written again in the person's name.
+        assertThat(jdbc.sql(blockEnd).query(String.class).single()).isEqualTo(before);
+        assertThat(auditActions().stream().filter("auth.locked"::equals)).hasSize(1);
+        Response changed = owner.put("/api/v1/account/password", body("currentPassword", PASSWORD,
+                "newPassword", "another-long-passphrase", "signOutOtherSessions", false));
+        assertThat(changed.status()).as(changed.toString()).isEqualTo(200);
+    }
+
+    @Test
+    void theRightCurrentPasswordDoesNotLiftABlockFromEverywhere() {
+        Browser owner = setUpOrganization();
+        for (int attempt = 1; attempt <= 20; attempt++) {
+            browser().from("203.0.113." + attempt)
+                    .post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", "guess-" + attempt));
+        }
+
+        // The address is changed without a new password: the attack goes on against the same one.
+        Response changed = owner.put("/api/v1/account/email", body("email", OWNER_EMAIL, "currentPassword", PASSWORD));
+        assertThat(changed.status()).as(changed.toString()).isEqualTo(200);
+        assertThat(browser().from("198.51.100.20").post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", PASSWORD))
+                .status()).isEqualTo(429);
+    }
+
+    @Test
     void openSessionsCanBeListedAndClosed() {
         Browser owner = setUpOrganization();
         Browser other = browser().userAgent(Browser.FIREFOX_UBUNTU);

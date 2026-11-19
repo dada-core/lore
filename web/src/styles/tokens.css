@@ -5,10 +5,12 @@
 :root {
   --bg: #FFFFFF; --bg-side: #F7F7F8; --bg-subtle: #F8F8FA; --bg-hover: #F0F0F3; --bg-active: #E8E8ED; --bg-raised: #FFFFFF;
   --border: #E6E6EA; --border-strong: #D6D7DC;
-  --text: #1B1C20; --text-2: #585B63; --text-3: #6B6F77;
+  --text: #1B1C20; --text-2: #585B63; --text-3: #62666E;
   --accent: #5B5FD6; --accent-hover: #4A4EC2; --accent-soft: #EEEEFD; --accent-ink: #FFFFFF; --accent-text: #4549BE;
-  --ok: #1F8A5B;
+  --ok: #1F8A5B; --ok-text: #17714A;
   --danger: #C4382F; --danger-bg: #FFF1F0; --danger-border: #F2C4C0;
+  /* Under white text, in both themes: the red of the dark theme is for text on a dark ground. */
+  --danger-solid: #C4382F;
   --warn-bg: #FFF7E3; --warn-border: #F0D48C; --warn-text: #734E00;
   --mark: #FFE38A; --mark-ink: #2A2100; --mark-edge: #DDAE1A; --pre-bg: #F6F7F9;
   --info-bg: #F1F1FE; --info-border: #D5D6F7;
@@ -39,7 +41,7 @@
     --border: #222327; --border-strong: #2E2F35;
     --text: #ECEDEF; --text-2: #A4A7AE; --text-3: #8C9098;
     --accent: #7F83F2; --accent-hover: #959AF6; --accent-soft: #22244A; --accent-ink: #0D0E1F; --accent-text: #A3A6F8;
-    --ok: #3DBE84;
+    --ok: #3DBE84; --ok-text: #3DBE84;
     --danger: #F0776E; --danger-bg: #2C1715; --danger-border: #5C2A26;
     --warn-bg: #2A2312; --warn-border: #5A4718; --warn-text: #F1CF7A;
     --mark: #5C4B12; --mark-ink: #FFEDB0; --mark-edge: #D4A732; --pre-bg: #17181C;
@@ -67,7 +69,7 @@
   --border: #222327; --border-strong: #2E2F35;
   --text: #ECEDEF; --text-2: #A4A7AE; --text-3: #8C9098;
   --accent: #7F83F2; --accent-hover: #959AF6; --accent-soft: #22244A; --accent-ink: #0D0E1F; --accent-text: #A3A6F8;
-  --ok: #3DBE84;
+  --ok: #3DBE84; --ok-text: #3DBE84;
   --danger: #F0776E; --danger-bg: #2C1715; --danger-border: #5C2A26;
   --warn-bg: #2A2312; --warn-border: #5A4718; --warn-text: #F1CF7A;
   --mark: #5C4B12; --mark-ink: #FFEDB0; --mark-edge: #D4A732; --pre-bg: #17181C;

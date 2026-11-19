@@ -78,10 +78,21 @@ function JoinForm({ token, invitation }: { token: string; invitation: Schemas['I
     mutationFn: () => call(() => api.POST('/api/v1/invitations/accept', {
       body: { token, displayName: displayName.trim(), email: email.trim(), password },
     })),
-    onSuccess: (info) => {
+    onSuccess: async (info) => {
+      // Straight into the first space of the invitation, unless it is gone since: then the home page.
+      // Read before the session starts, so that the form does not show a session open meanwhile.
+      const first = invitation.spaces[0];
+      const space = first
+        ? await call(() => api.GET('/api/v1/spaces/{id}', { params: { path: { id: first.id } } })).catch(() => null)
+        : null;
       startSession(info);
-      navigate('/', { replace: true });
-      notify(t('join.welcome', { org: invitation.organizationName }));
+      if (space) {
+        navigate(`/spaces/${space.slug}`, { replace: true });
+        notify(t('join.welcomeSpace', { space: space.name }));
+      } else {
+        navigate('/', { replace: true });
+        notify(t('join.welcome', { org: invitation.organizationName }));
+      }
     },
     onError: (error) => setProblems(problemsOf(error)),
   });

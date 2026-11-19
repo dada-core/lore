@@ -43,7 +43,7 @@ class SearchApiTests extends ApiTest {
         String runbook = document("Restaurer une base", "fr", passage("h-7-2", List.of("4. Vérifier", "4.2 Erreurs fréquentes"),
                 "Si pg_restore affiche pg_restore: error: role \"reporting\" does not exist, créez le rôle sur 10.0.3.17 puis relancez."));
         String guide = document("Redémarrage du serveur de fichiers", "fr", passage("h-1", List.of("Redémarrage"),
-                "Le navigateur affiche ERR_CONNECTION_REFUSED pendant le redémarrage : voir https://lore.dada.group/docs/reprise pour la suite."));
+                "Le navigateur affiche ERR_CONNECTION_REFUSED pendant le redémarrage : voir https://lore.example.com/docs/reprise pour la suite."));
 
         assertThat(found("pg_restore")).containsExactly(runbook);
         assertThat(found("ERR_CONNECTION_REFUSED")).containsExactly(guide);
@@ -51,8 +51,8 @@ class SearchApiTests extends ApiTest {
         assertThat(found("10.0.3.18")).isEmpty();
         assertThat(found("ROLE")).containsExactly(runbook);
         assertThat(found("redemarrer serveurs")).containsExactly(guide);
-        assertThat(found("https://lore.dada.group/docs/reprise")).containsExactly(guide);
-        assertThat(found("lore.dada.group")).containsExactly(guide);
+        assertThat(found("https://lore.example.com/docs/reprise")).containsExactly(guide);
+        assertThat(found("lore.example.com")).containsExactly(guide);
         assertThat(found("pg_restore: error: role \"reporting\" does not exist")).containsExactly(runbook);
         // The syntax: a phrase, one or the other, a word left out.
         assertThat(found("\"does not exist\"")).containsExactly(runbook);

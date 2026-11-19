@@ -1,5 +1,6 @@
 package com.dadacore.lore.identity.setup;
 
+import com.dadacore.lore.LoreProperties;
 import com.dadacore.lore.identity.organization.OrganizationRepository;
 import com.dadacore.lore.identity.organization.PublicUrl;
 import org.slf4j.Logger;
@@ -38,6 +39,13 @@ class SetupBanner {
         if (organizations.exists()) {
             return;
         }
+        // Checked here, once the database answers: an installation set up already starts whatever the
+        // code, which serves no more.
+        if (setupCode.tooShort()) {
+            throw new IllegalStateException("LORE_SETUP_CODE must have " + LoreProperties.SETUP_CODE_MIN_LENGTH
+                    + " characters or more, spaces and dashes left aside, while the initial setup is not done;"
+                    + " leave it empty for a random code printed in the logs.");
+        }
         if (setupCode.fromEnvironment()) {
             log.info("Initial setup: open {}/setup and enter the code set in LORE_SETUP_CODE.", address);
             return;
@@ -50,7 +58,7 @@ class SetupBanner {
 
                       {}
 
-                  The code is printed again at each start until setup is done.
+                  A new code is drawn at each start until setup is done.
                 ==============================================================
                 """, address, setupCode.current());
     }

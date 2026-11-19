@@ -5,6 +5,9 @@ name: Release
 # with the version and its major.minor, the SHA256SUMS file, and a GitHub release with every file.
 # A version with a suffix (v0.1.0-alpha.1, v0.1.0-rc.1) is a preview: its image only gets its own tag,
 # and its release is marked as a pre-release, so releases/latest keeps pointing to the last stable one.
+# Before the release is created, the published image is timed through the five minutes on amd64 and
+# arm64, with the docker-compose.yml of the release, and analysed for vulnerabilities: a failure of
+# either stops the publication.
 
 on:
   push:
@@ -25,7 +28,6 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
       image: ${{ steps.version.outputs.image }}
-      image-tags: ${{ steps.version.outputs.image-tags }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -50,17 +52,16 @@ jobs:
             *SNAPSHOT*) echo "::error::$version is a development version: set the version to release in pom.xml."; exit 1 ;;
           esac
           # image: the tag of the image in the published docker-compose.yml. A stable version moves the
-          # major.minor tag (0.1), so that the same file receives the fixes; a preview only has its own.
-          name=ghcr.io/dada-core/lore
+          # major.minor tag (0.1), so that the same file receives the fixes, once its checks have passed
+          # (job image-tag); a preview only has its own.
           case $version in
-            *-*) prerelease=true; image=$version; tags=$name:$version ;;
-            *) prerelease=false; image=${version%.*}; tags=$name:$version,$name:${version%.*} ;;
+            *-*) prerelease=true; image=$version ;;
+            *) prerelease=false; image=${version%.*} ;;
           esac
           {
             echo "version=$version"
             echo "prerelease=$prerelease"
             echo "image=$image"
-            echo "image-tags=$tags"
           } >> "$GITHUB_OUTPUT"
       - name: Interface, tests and application
         run: |
@@ -141,7 +142,8 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ needs.build.outputs.image-tags }}
+          # A candidate tag: the tags people pull are set once the image has passed its checks (job image-tag).
+          tags: ghcr.io/dada-core/lore:${{ needs.build.outputs.version }}-candidate
           labels: |
             org.opencontainers.image.title=Lore
             org.opencontainers.image.description=Open source workspace for technical knowledge
@@ -149,9 +151,124 @@ jobs:
             org.opencontainers.image.version=${{ needs.build.outputs.version }}
             org.opencontainers.image.licenses=AGPL-3.0-only
 
+  # The docker-compose.yml of the repository, with the image of the release instead of a local build.
+  # The installation guide downloads it from releases/latest/download/docker-compose.yml.
+  compose:
+    name: Compose file
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compose file
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+        run: |
+          mkdir -p dist
+          sed -e '/^    build: \.$/d' \
+              -e "s|^    image: lore:local$|    image: ghcr.io/dada-core/lore:$IMAGE|" \
+              -e 's|^# Lore and its PostgreSQL database, built from this repository\.$|# Lore and its PostgreSQL database.|' \
+              -e 's|docker compose up -d --build|docker compose up -d|' \
+              -e '/^# The file published with each release is the same/d' \
+              docker-compose.yml > dist/docker-compose.yml
+          grep -q "^    image: ghcr.io/dada-core/lore:$IMAGE$" dist/docker-compose.yml
+          if grep -q 'build' dist/docker-compose.yml; then echo "docker-compose.yml still builds locally"; exit 1; fi
+          cat dist/docker-compose.yml
+      - uses: actions/upload-artifact@v7
+        with:
+          name: compose
+          path: dist/docker-compose.yml
+
+  # The five minutes with what a person downloads: the docker-compose.yml of the release and the
+  # image just published, on each architecture. The arm64 image, built by emulation, starts here.
+  five-minutes:
+    name: Five minutes (${{ matrix.arch }})
+    needs: [build, image, compose]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: compose
+          path: ${{ runner.temp }}/release
+      - name: Playwright and Chromium
+        run: |
+          npm ci --prefix web --no-audit --no-fund
+          cd web && npx playwright install --with-deps chromium
+      # The file names the tag of the version, or of its major.minor (0.1), set only once these checks
+      # have passed: the candidate image is the one tried, the file otherwise as published.
+      - name: From docker-compose.yml to the passage found
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          compose="$RUNNER_TEMP/release/docker-compose.yml"
+          sed -i "s|^    image: ghcr.io/dada-core/lore:.*$|    image: ghcr.io/dada-core/lore:$VERSION-candidate|" "$compose"
+          grep -q "^    image: ghcr.io/dada-core/lore:$VERSION-candidate$" "$compose"
+          sh packaging/five-minutes.sh "$compose"
+
+  # The published image on each architecture, analysed by Trivy (its image, pinned by its digest):
+  # no critical or high vulnerability that has a fix.
+  scan:
+    name: Image analysis
+    needs: [build, image]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Trivy
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          TRIVY: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+        run: |
+          for platform in linux/amd64 linux/arm64; do
+            echo "::group::$platform"
+            docker run --rm -v trivy-cache:/root/.cache "$TRIVY" image --quiet --timeout 20m --platform "$platform" \
+              --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 \
+              "ghcr.io/dada-core/lore:$VERSION-candidate"
+            echo "::endgroup::"
+          done
+
+  # The tags people pull, set only once the candidate image has passed the five minutes and the
+  # analysis, and the packages have passed their checks: the one of the version, and for a stable version the one of its major.minor (0.1), which
+  # the docker-compose.yml of the release names. A rejected image keeps its candidate tag alone.
+  image-tag:
+    name: Image tags
+    needs: [build, packages, compose, five-minutes, scan]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: ghcr.io/dada-core/lore:${{ needs.build.outputs.version }}
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          IMAGE: ${{ needs.build.outputs.image }}
+        run: |
+          name=ghcr.io/dada-core/lore
+          tags="-t $name:$VERSION"
+          if [ "$IMAGE" != "$VERSION" ]; then tags="$tags -t $name:$IMAGE"; fi
+          docker buildx imagetools create $tags "$name:$VERSION-candidate"
+
+
   publish:
     name: GitHub release
-    needs: [build, packages, image]
+    needs: [build, packages, image, compose, five-minutes, scan, image-tag]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -165,24 +282,10 @@ jobs:
           pattern: packages-*
           path: dist
           merge-multiple: true
-      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
-          path: source
-      - name: Compose file
-        env:
-          IMAGE: ${{ needs.build.outputs.image }}
-        run: |
-          # The docker-compose.yml of the repository, with the image of the release instead of a local build.
-          # The installation guide downloads it from releases/latest/download/docker-compose.yml.
-          sed -e '/^    build: \.$/d' \
-              -e "s|^    image: lore:local$|    image: ghcr.io/dada-core/lore:$IMAGE|" \
-              -e 's|^# Lore and its PostgreSQL database, built from this repository\.$|# Lore and its PostgreSQL database.|' \
-              -e 's|docker compose up -d --build|docker compose up -d|' \
-              -e '/^# The file published with each release is the same/d' \
-              source/docker-compose.yml > dist/docker-compose.yml
-          grep -q "^    image: ghcr.io/dada-core/lore:$IMAGE$" dist/docker-compose.yml
-          if grep -q 'build' dist/docker-compose.yml; then echo "docker-compose.yml still builds locally"; exit 1; fi
-          cat dist/docker-compose.yml
+          name: compose
+          path: dist
       - name: Checksums
         run: |
           cd dist

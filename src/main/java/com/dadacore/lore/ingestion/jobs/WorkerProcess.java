@@ -182,6 +182,11 @@ final class WorkerProcess implements AutoCloseable {
                 "-XX:+UseSerialGC",
                 "-Djava.awt.headless=true",
                 "-Dfile.encoding=UTF-8",
+                // The XML parsers of the JDK, the only ones on the class path, reach no external
+                // DTD, schema or stylesheet, whatever a library asks: no protocol is allowed.
+                "-Djavax.xml.accessExternalDTD=",
+                "-Djavax.xml.accessExternalSchema=",
+                "-Djavax.xml.accessExternalStylesheet=",
                 "-Djava.io.tmpdir=" + workFolder));
         if (testHooks) {
             command.add("-D" + WorkerMain.TEST_HOOKS + "=true");

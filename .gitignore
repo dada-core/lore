@@ -9,6 +9,11 @@ target/
 node_modules/
 dist/
 
+# Journeys in real browsers (web/e2e): results, report, sessions of the test people
+web/e2e-results/
+web/e2e-report/
+web/e2e/.auth/
+
 # IDE
 .idea/
 *.iml

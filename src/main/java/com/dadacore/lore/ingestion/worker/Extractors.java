@@ -1,5 +1,6 @@
 package com.dadacore.lore.ingestion.worker;
 
+import java.awt.geom.Point2D;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -9,6 +10,14 @@ import java.util.Locale;
 import com.dadacore.lore.ingestion.Extraction;
 import com.dadacore.lore.ingestion.Rendering;
 import com.dadacore.lore.shared.Texts;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.contentstream.PDFGraphicsStreamEngine;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.io.IOUtils;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
 import org.apache.tika.detect.DefaultDetector;
 import org.apache.tika.detect.Detector;
 import org.apache.tika.exception.EncryptedDocumentException;
@@ -40,7 +49,10 @@ final class Extractors {
     static final String MARKDOWN = "text/markdown";
     static final String TEXT = "text/plain";
 
-    /** A page with fewer visible characters is a page without text, an image. */
+    /**
+     * A page with fewer visible characters is a page without text: an image of a page, when it shows
+     * an image (a slide, a form or a drawing without text shows none).
+     */
     static final int EMPTY_PAGE = 20;
 
     /** The type Tika gives to an Office document protected by a password. */
@@ -71,7 +83,7 @@ final class Extractors {
         parse(new PDFParser(), file, text, text, metadata, config);
 
         Chunker chunker = new Chunker(maxCharacters);
-        int emptyPages = 0;
+        List<Integer> emptyPages = new ArrayList<>();
         List<XhtmlText.Place> pages = text.places();
         for (XhtmlText.Place page : pages) {
             int visible = 0;
@@ -79,7 +91,7 @@ final class Extractors {
                 visible += (int) paragraph.chars().filter(c -> !Character.isWhitespace(c)).count();
             }
             if (visible < EMPTY_PAGE) {
-                emptyPages++;
+                emptyPages.add(page.number());
             }
             chunker.section("page-" + page.number(), page.number(), List.of(), page.paragraphs());
         }
@@ -88,8 +100,129 @@ final class Extractors {
         }
         Integer declared = metadata.getInt(PagedText.N_PAGES);
         int pageCount = declared != null && declared > 0 ? declared : pages.size();
-        boolean scanned = pageCount > 0 && !text.stopped() && emptyPages * 2 >= pageCount;
+        // Scanned: at least half of the pages are images without text. The images are looked for only
+        // when the text alone could make it so, which a PDF of text never does.
+        boolean scanned = pageCount > 0 && !text.stopped() && emptyPages.size() * 2 >= pageCount
+                && halfOfThePagesShowAnImage(file, emptyPages, pageCount);
         return result(chunker, scanned, pageCount, null, null);
+    }
+
+    /**
+     * Whether half of the pages at least are among these pages without text (from 1) and show an
+     * image, as a scanner draws one on each page. The pages are looked at only until the answer is
+     * known. A PDF that Tika read but PDFBox refuses here counts them all, as the rule did before
+     * images were looked for.
+     */
+    private static boolean halfOfThePagesShowAnImage(Path file, List<Integer> numbers, int pageCount) {
+        int needed = (pageCount + 1) / 2;
+        // Read from the file, its streams kept in temporary files: the memory of the process stays
+        // small whatever the size of the PDF.
+        try (PDDocument document = Loader.loadPDF(file.toFile(), "", null, null, IOUtils.createTempFileOnlyStreamCache())) {
+            int found = 0;
+            int left = numbers.size();
+            for (int number : numbers) {
+                if (found >= needed || found + left < needed) {
+                    break;
+                }
+                left--;
+                if (number >= 1 && number <= document.getNumberOfPages() && showsAnImage(document.getPage(number - 1))) {
+                    found++;
+                }
+            }
+            return found >= needed;
+        } catch (IOException | RuntimeException e) {
+            return numbers.size() >= needed;
+        }
+    }
+
+    /**
+     * Whether a page draws an image, followed as a renderer would without drawing anything: an image
+     * object, an image written in the content itself (as some scanners and fax programs do), inside
+     * the forms the page draws, or in the appearance of an annotation.
+     */
+    private static boolean showsAnImage(PDPage page) throws IOException {
+        ImageFinder finder = new ImageFinder(page);
+        try {
+            finder.processPage(page);
+            for (PDAnnotation annotation : page.getAnnotations()) {
+                finder.showAnnotation(annotation);
+            }
+        } catch (ImageFound found) {
+            return true;
+        }
+        return false;
+    }
+
+    /** Thrown by the first image found: the rest of the page need not be gone through. */
+    private static final class ImageFound extends RuntimeException {
+
+        private static final ImageFound INSTANCE = new ImageFound();
+
+        private ImageFound() {
+            super(null, null, false, false);
+        }
+    }
+
+    /** Goes through what a page draws until an image is among it; draws nothing. */
+    private static final class ImageFinder extends PDFGraphicsStreamEngine {
+
+        ImageFinder(PDPage page) {
+            super(page);
+        }
+
+        @Override
+        public void drawImage(PDImage image) {
+            throw ImageFound.INSTANCE;
+        }
+
+        @Override
+        public void appendRectangle(Point2D p0, Point2D p1, Point2D p2, Point2D p3) {
+        }
+
+        @Override
+        public void clip(int windingRule) {
+        }
+
+        @Override
+        public void moveTo(float x, float y) {
+        }
+
+        @Override
+        public void lineTo(float x, float y) {
+        }
+
+        @Override
+        public void curveTo(float x1, float y1, float x2, float y2, float x3, float y3) {
+        }
+
+        @Override
+        public Point2D getCurrentPoint() {
+            return new Point2D.Float();
+        }
+
+        @Override
+        public void closePath() {
+        }
+
+        @Override
+        public void endPath() {
+        }
+
+        @Override
+        public void strokePath() {
+        }
+
+        @Override
+        public void fillPath(int windingRule) {
+        }
+
+        @Override
+        public void fillAndStrokePath(int windingRule) {
+        }
+
+        @Override
+        public void shadingFill(COSName shadingName) {
+        }
     }
 
     private Extraction word(Path file) throws IOException, ExtractionFailure {

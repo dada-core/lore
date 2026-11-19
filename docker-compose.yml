@@ -16,6 +16,10 @@ services:
       # The address your team will use to open Lore: it appears in invitation links.
       LORE_PUBLIC_URL: ${LORE_PUBLIC_URL:-http://localhost:8080}
       LORE_DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the .env file next to docker-compose.yml}
+      # Behind a reverse proxy on this machine or in a container: 172.16.0.0/12, with the port of Lore
+      # published on 127.0.0.1 only, so that Lore sees the address of each person. See "HTTPS and
+      # reverse proxy" in the documentation.
+      LORE_TRUSTED_PROXIES: ${LORE_TRUSTED_PROXIES:-127.0.0.0/8, ::1/128}
     volumes:
       - files:/var/lib/lore/files
     depends_on:

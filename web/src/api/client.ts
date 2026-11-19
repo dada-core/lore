@@ -48,17 +48,51 @@ export function readCookie(name: string): string | null {
   return null;
 }
 
+const HOST_CSRF_COOKIE = '__Host-XSRF-TOKEN';
+const CSRF_COOKIE = 'XSRF-TOKEN';
+
+// The cookie read first. A cookie of the other name may remain from before a change of the public
+// address, until the browser closes: the one the server last accepted then comes first.
+let csrfCookie = HOST_CSRF_COOKIE;
+
+function otherCsrfCookie(name: string): string {
+  return name === HOST_CSRF_COOKIE ? CSRF_COOKIE : HOST_CSRF_COOKIE;
+}
+
+/**
+ * The CSRF token sent back in the X-XSRF-TOKEN header. Behind an https public address, the server
+ * names its cookie __Host-XSRF-TOKEN (the browser then keeps it to this very host, over https);
+ * otherwise XSRF-TOKEN.
+ */
+export function csrfToken(): string | null {
+  return readCookie(csrfCookie) ?? readCookie(otherCsrfCookie(csrfCookie));
+}
+
+/**
+ * After a request refused twice for its CSRF token, while both cookies are there: the other one is
+ * read first. Returns what puts the former order back, if the request is refused again; null when
+ * there is no other cookie to try.
+ */
+export function tryOtherCsrfCookie(): (() => void) | null {
+  if (readCookie(HOST_CSRF_COOKIE) === null || readCookie(CSRF_COOKIE) === null) return null;
+  const refused = csrfCookie;
+  csrfCookie = otherCsrfCookie(refused);
+  return () => {
+    csrfCookie = refused;
+  };
+}
+
 export const api = createClient<paths>({
   baseUrl: typeof window === 'undefined' ? '' : window.location.origin,
   // Looked up on every call, so that tests can replace it.
   fetch: (request) => globalThis.fetch(request),
 });
 
-// Every request that changes something sends back the CSRF token of the XSRF-TOKEN cookie.
+// Every request that changes something sends back the CSRF token of its cookie.
 api.use({
   onRequest({ request }) {
     if (!SAFE_METHODS.has(request.method)) {
-      const token = readCookie('XSRF-TOKEN');
+      const token = csrfToken();
       if (token) request.headers.set('X-XSRF-TOKEN', token);
     }
     return request;
@@ -102,15 +136,25 @@ export function toApiError(status: number, body: unknown): ApiError {
   return new ApiError(status, code, fieldErrors, problem);
 }
 
+function refusedForCsrf(result: Result<unknown>): boolean {
+  return result.response.status === 403 && toApiError(403, result.error).code === 'csrf';
+}
+
 /**
  * Sends a request and returns its data, or throws an {@link ApiError}. A request refused for a
- * missing CSRF token is sent again once, after fetching a new token.
+ * missing CSRF token is sent again once, after fetching a new token; with the token of the other
+ * cookie if it is refused again while both are there.
  */
 export async function call<T>(request: () => Promise<Result<T>>): Promise<T> {
   let result = await send(request);
-  if (result.response.status === 403 && toApiError(403, result.error).code === 'csrf') {
+  if (refusedForCsrf(result)) {
     await send(() => api.GET('/api/v1/session'));
     result = await send(request);
+    const restore = refusedForCsrf(result) ? tryOtherCsrfCookie() : null;
+    if (restore) {
+      result = await send(request);
+      if (refusedForCsrf(result)) restore();
+    }
   }
   if (result.response.ok) return result.data as T;
   const error = toApiError(result.response.status, result.error);

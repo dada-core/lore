@@ -1,7 +1,9 @@
 package com.dadacore.lore;
 
 import java.io.PrintStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -24,8 +26,9 @@ final class CommandLine {
     private CommandLine() {
     }
 
+    /** A command, or a request for the list of the commands; anything else starts the server. */
     static boolean handles(String[] args) {
-        return args.length > 0 && !args[0].startsWith("--");
+        return args.length > 0 && (!args[0].startsWith("--") || HELP.contains(args[0]));
     }
 
     static int run(String[] args) {
@@ -37,11 +40,16 @@ final class CommandLine {
         application.setLogStartupInfo(false);
         application.setDefaultProperties(Map.of("spring.main.lazy-initialization", "true"));
         // Passed as arguments, which take precedence over LORE_LOG_LEVEL: the output of a
-        // command is its result, not the startup of the application.
-        try (ConfigurableApplicationContext context = application.run(
-                "--logging.level.root=WARN", "--spring.main.log-startup-info=false")) {
+        // command is its result, not the startup of the application. The list of the commands
+        // needs no database: without migrations, nothing connects to it.
+        boolean help = HELP.contains(args[0]);
+        List<String> settings = new ArrayList<>(List.of("--logging.level.root=WARN", "--spring.main.log-startup-info=false"));
+        if (help) {
+            settings.add("--spring.flyway.enabled=false");
+        }
+        try (ConfigurableApplicationContext context = application.run(settings.toArray(String[]::new))) {
             Map<String, CliCommand> commands = context.getBeansOfType(CliCommand.class);
-            if (HELP.contains(args[0])) {
+            if (help) {
                 printUsage(out, commands);
                 return 0;
             }

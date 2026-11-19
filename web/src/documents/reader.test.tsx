@@ -404,6 +404,16 @@ describe('a PDF', () => {
     expect(pdf.destinations).toEqual(['d2']);
   });
 
+  it('says what an older version of a PDF became, with a page or without', async () => {
+    server(view({}, { mediaType: PDF, extractionStatus: 'INDEXED', pageCount: 5, number: 4 }));
+    const router = open(`/documents/${ID}?v=3`);
+    expect(await screen.findByText('Ce lien visait la version 3 : voici la version actuelle.')).toBeInTheDocument();
+    expect(screen.queryByText('Ce passage a changé depuis la version 3.')).not.toBeInTheDocument();
+
+    await act(() => router.navigate(`/documents/${ID}?v=3#page-2`));
+    expect(await screen.findByText('Ce lien visait la page 2 de la version 3 : voici la page 2 de la version actuelle.')).toBeInTheDocument();
+  });
+
   it('says when the page of the address is beyond the last one', async () => {
     server(view({}, { mediaType: PDF, extractionStatus: 'INDEXED', pageCount: 5 }));
     open(`/documents/${ID}?from=search&q=baie#page-40`);

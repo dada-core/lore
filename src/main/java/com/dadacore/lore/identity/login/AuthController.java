@@ -3,6 +3,7 @@ package com.dadacore.lore.identity.login;
 import com.dadacore.lore.identity.security.LoginSessions;
 import com.dadacore.lore.shared.ApiException;
 import com.dadacore.lore.shared.RequestInfo;
+import com.dadacore.lore.shared.Secrets;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,6 +31,12 @@ class AuthController {
     }
 
     record LoginRequest(String email, String password) {
+
+        /** The password stays out of the logs. */
+        @Override
+        public String toString() {
+            return "LoginRequest[email=" + email + ", password=" + Secrets.hide(password) + "]";
+        }
     }
 
     /**
@@ -50,8 +57,7 @@ class AuthController {
             case LoginService.LoginResult.Invalid invalid -> throw new ApiException(HttpStatus.UNAUTHORIZED, "invalid_credentials")
                     .with("remainingAttempts", invalid.remainingAttempts())
                     .with("lockoutMinutes", invalid.lockoutMinutes());
-            case LoginService.LoginResult.Locked locked -> throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "login_locked")
-                    .with("retryAfterMinutes", locked.retryAfterMinutes());
+            case LoginService.LoginResult.Locked locked -> throw LoginThrottle.locked(locked.retryAfterMinutes());
             case LoginService.LoginResult.Disabled disabled -> throw ApiException.forbidden("account_disabled");
         };
     }
