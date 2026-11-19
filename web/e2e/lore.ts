@@ -312,9 +312,12 @@ export const test = base.extend<Fixtures>({
     for (const client of clients) await client.dispose();
   },
 
-  audit: async ({}, use) => {
+  audit: async ({ browserName }, use) => {
     await use(async (page, screen, exceptions = []) => {
-      if (process.env.LORE_E2E_AXE === '0') return;
+      // Not in Firefox: there, axe leaves the page in a state where its next change crashes the
+      // content process of the browser (SIGSEGV, with the target-size rule alone), which a person
+      // using Lore never meets. The screens are audited in Chromium and WebKit.
+      if (process.env.LORE_E2E_AXE === '0' || browserName === 'firefox') return;
       await base.step(`axe: ${screen}`, async () => {
         const found: string[] = [];
         const run = async (variant: string) => {
