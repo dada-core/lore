@@ -165,6 +165,24 @@ describe('the search page', () => {
     expect(screen.getByRole('searchbox', { name: 'Rechercher dans vos documents' })).toHaveAttribute('aria-invalid', 'true');
   });
 
+  it('says when the filters leave nothing, and removes them', async () => {
+    const { asked } = server({
+      'GET /api/v1/search': (request) => {
+        const url = new URL(request.url);
+        asked.push(url);
+        return url.searchParams.has('updated')
+          ? json({ items: [], page: 0, size: 20, total: 0, facets: FACETS })
+          : json({ items: [result(ID, 'Restaurer une base')], page: 0, size: 20, total: 1, facets: FACETS });
+      },
+    });
+    const router = open('/search?q=sauvegarde&updated=30d');
+
+    expect(await screen.findByText('Aucun résultat avec ces filtres.')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Retirer les filtres' }));
+    await waitFor(() => expect(router.state.location.search).toBe('?q=sauvegarde'));
+    expect(await screen.findByRole('article', { name: 'Restaurer une base' })).toBeInTheDocument();
+  });
+
   it('without a query, offers the recent searches, and forgets them', async () => {
     server();
     rememberSearch(eli.id, 'bascule kubernetes');

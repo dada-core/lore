@@ -135,7 +135,7 @@ export function AuditPage() {
       <div className="lib-tools" style={{ marginBottom: 10 }}>
         <Menu
           triggerClassName={category ? 'tool is-on-blue' : 'tool'}
-          label={t('audit.category')}
+          label={t('audit.filter', { label: t('audit.category'), value: category ? t(`audit.category.${category}`) : t('audit.allCategories') })}
           trigger={<><Icon name="tag" />{category ? t(`audit.category.${category}`) : t('audit.allCategories')}</>}
         >
           <MenuItem checked={!category} onSelect={() => choose('category', null)}>{t('audit.allCategories')}</MenuItem>
@@ -148,7 +148,7 @@ export function AuditPage() {
         </Menu>
         <Menu
           triggerClassName={actor ? 'tool is-on-blue' : 'tool'}
-          label={t('audit.person')}
+          label={t('audit.filter', { label: t('audit.person'), value: actorName ?? t('audit.everyone') })}
           trigger={<><Icon name="user" />{actorName ?? t('audit.everyone')}</>}
         >
           <MenuItem checked={!actor} onSelect={() => choose('actor', null)}>{t('audit.everyone')}</MenuItem>
@@ -162,7 +162,7 @@ export function AuditPage() {
         </Menu>
         <Menu
           triggerClassName={period !== '7d' ? 'tool is-on-blue' : 'tool'}
-          label={t('audit.period')}
+          label={t('audit.filter', { label: t('audit.period'), value: t(`audit.period.${period}`) })}
           trigger={<><Icon name="calendar" />{t(`audit.period.${period}`)}</>}
         >
           {(Object.keys(PERIODS) as Period[]).map((value) => (

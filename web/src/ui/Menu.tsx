@@ -88,10 +88,21 @@ export function Menu({ trigger, label, triggerClassName = 'icon-btn', align = 's
       if (!openedAt || !now || Math.abs(now.top - openedAt.top) > 1 || Math.abs(now.left - openedAt.left) > 1) close(false);
     };
     const onResize = () => close(false);
+    // Escape closes the list wherever the focus is: opened with the mouse, the focus stays on its
+    // button, or on the page itself in Safari, which focuses no button it clicks. Caught first, so
+    // that a dialog behind the list stays open.
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      close(popoverRef.current?.contains(document.activeElement) || document.activeElement === triggerRef.current);
+    };
+    document.addEventListener('keydown', onEscape, true);
     document.addEventListener('pointerdown', onPointer);
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onResize);
     return () => {
+      document.removeEventListener('keydown', onEscape, true);
       document.removeEventListener('pointerdown', onPointer);
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onResize);

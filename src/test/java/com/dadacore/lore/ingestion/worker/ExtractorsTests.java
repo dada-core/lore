@@ -65,6 +65,35 @@ class ExtractorsTests {
     }
 
     @Test
+    void pagesWithoutTextButWithoutImageEitherAreNotAScan() throws Exception {
+        // Slides with short titles, a form, a drawing labelled in a few letters, blank pages: no image
+        // of a page, so not scanned, whatever little text they hold.
+        Extraction slides = extractors.extract(write(folder, "slides.pdf", SampleFiles.pdf("Plan", "Merci", "Questions")),
+                Extractors.PDF);
+        assertThat(slides.scanned()).isFalse();
+        assertThat(slides.chunks()).isNotEmpty();
+        Extraction blank = extractors.extract(write(folder, "annexes.pdf", SampleFiles.pdf(ENGLISH, "", "")), Extractors.PDF);
+        assertThat(blank.scanned()).isFalse();
+
+        // An image on the pages without text: scanned, as before.
+        Extraction scan = extractors.extract(write(folder, "scan-with-cover.pdf", SampleFiles.pdf("Manuel", null, null)),
+                Extractors.PDF);
+        assertThat(scan.scanned()).isTrue();
+    }
+
+    @Test
+    void aScanIsFoundWhereverThePdfPutsTheImageOfItsPages() throws Exception {
+        // Written in the content of each page, as some scanners and fax programs do, or shown by a
+        // stamp over it: an image all the same.
+        for (SampleFiles.ScanImage kind : SampleFiles.ScanImage.values()) {
+            Extraction scan = extractors.extract(write(folder, kind + ".pdf", SampleFiles.scannedPdf(kind, 2)),
+                    Extractors.PDF);
+            assertThat(scan.scanned()).as(kind.name()).isTrue();
+            assertThat(scan.pageCount()).as(kind.name()).isEqualTo(2);
+        }
+    }
+
+    @Test
     void aProtectedFileIsReportedAsSuch() {
         assertThatThrownBy(() -> extractors.extract(write(folder, "p.pdf", SampleFiles.protectedPdf(ENGLISH)), Extractors.PDF))
                 .isInstanceOfSatisfying(ExtractionFailure.class, f -> assertThat(f.code()).isEqualTo("encrypted"));

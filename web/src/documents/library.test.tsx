@@ -100,7 +100,7 @@ describe('library', () => {
 
     expect(await screen.findByText('5 documents')).toBeInTheDocument();
     expect(screen.getByText('1 en cours d’indexation')).toBeInTheDocument();
-    expect(screen.getByText('1 numérisé, non recherchable')).toBeInTheDocument();
+    expect(screen.getByText('1 numérisé, en partie non recherchable')).toBeInTheDocument();
   });
 
   it('folds a group, and filters by folder', async () => {

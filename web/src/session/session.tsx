@@ -38,8 +38,12 @@ function endSession(reason: SignOutReason): void {
   queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'session' });
 }
 
-/** The server answered 401: the session has expired, or was closed from another device. */
+/**
+ * The server answered 401: the session has expired, or was closed from another device. The recent
+ * searches go as at sign-out: the next person at this computer does not see them.
+ */
 export function expireSession(): void {
+  forgetSearches();
   if (queryClient.getQueryData<SessionInfo>(keys.session)?.user) endSession('expired');
 }
 

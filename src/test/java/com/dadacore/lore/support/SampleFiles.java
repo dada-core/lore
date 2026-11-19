@@ -28,9 +28,95 @@ public final class SampleFiles {
     private SampleFiles() {
     }
 
-    /** A PDF with one page per text; a null text leaves the page without text, like a scan. */
+    /**
+     * A PDF with one page per text: a null text makes the page an image without text, as a scanner
+     * does; an empty text leaves the page blank, without image either.
+     */
     public static byte[] pdf(String... pages) {
         return protectedPdf(null, pages);
+    }
+
+    /** How a scanner may put the image of each page in the PDF. */
+    public enum ScanImage {
+        /** An image object drawn by the page, as most scanners do. */
+        OBJECT,
+        /** An image written in the content of the page itself, as some scanners and fax programs do. */
+        INLINE,
+        /** An image shown by an annotation over the page, a stamp. */
+        ANNOTATION
+    }
+
+    /** A PDF of scanned pages, without text, their image put in the PDF this way. */
+    public static byte[] scannedPdf(ScanImage kind, int pages) {
+        try (PDDocument document = new PDDocument()) {
+            for (int i = 0; i < pages; i++) {
+                PDPage page = new PDPage();
+                document.addPage(page);
+                scan(document, page, kind);
+            }
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            document.save(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** An image drawn over the page, grey: what a scanner gives. */
+    private static void scan(PDDocument document, PDPage page, ScanImage kind) throws IOException {
+        int width = 20;
+        int height = 26;
+        byte[] samples = new byte[width * height];
+        java.awt.image.BufferedImage picture = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_BYTE_GRAY);
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                int grey = (x * 7 + y * 13) % 256;
+                picture.getRaster().setSample(x, y, 0, grey);
+                samples[y * width + x] = (byte) grey;
+            }
+        }
+        org.apache.pdfbox.pdmodel.common.PDRectangle box = page.getMediaBox();
+        switch (kind) {
+            case OBJECT -> {
+                org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject image =
+                        org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, picture);
+                try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                    content.drawImage(image, 0, 0, box.getWidth(), box.getHeight());
+                }
+            }
+            case INLINE -> {
+                org.apache.pdfbox.cos.COSDictionary parameters = new org.apache.pdfbox.cos.COSDictionary();
+                parameters.setInt(org.apache.pdfbox.cos.COSName.W, width);
+                parameters.setInt(org.apache.pdfbox.cos.COSName.H, height);
+                parameters.setInt(org.apache.pdfbox.cos.COSName.BPC, 8);
+                parameters.setItem(org.apache.pdfbox.cos.COSName.CS, org.apache.pdfbox.cos.COSName.G);
+                org.apache.pdfbox.pdmodel.graphics.image.PDInlineImage image =
+                        new org.apache.pdfbox.pdmodel.graphics.image.PDInlineImage(parameters, samples, null);
+                try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                    content.drawImage(image, 0, 0, box.getWidth(), box.getHeight());
+                }
+            }
+            case ANNOTATION -> {
+                org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject image =
+                        org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, picture);
+                org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream appearance =
+                        new org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream(document);
+                appearance.setBBox(new org.apache.pdfbox.pdmodel.common.PDRectangle(box.getWidth(), box.getHeight()));
+                appearance.setResources(new org.apache.pdfbox.pdmodel.PDResources());
+                try (org.apache.pdfbox.pdmodel.PDAppearanceContentStream content =
+                        new org.apache.pdfbox.pdmodel.PDAppearanceContentStream(appearance)) {
+                    content.drawImage(image, 0, 0, box.getWidth(), box.getHeight());
+                }
+                org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary dictionary =
+                        new org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary();
+                dictionary.setNormalAppearance(appearance);
+                org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationRubberStamp stamp =
+                        new org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationRubberStamp();
+                stamp.setRectangle(box);
+                stamp.setAppearance(dictionary);
+                page.setAnnotations(java.util.List.of(stamp));
+            }
+        }
     }
 
     /** A PDF that opens only with a password. */
@@ -44,6 +130,10 @@ public final class SampleFiles {
                 PDPage page = new PDPage();
                 document.addPage(page);
                 if (text == null) {
+                    scan(document, page, ScanImage.OBJECT);
+                    continue;
+                }
+                if (text.isEmpty()) {
                     continue;
                 }
                 try (PDPageContentStream content = new PDPageContentStream(document, page)) {

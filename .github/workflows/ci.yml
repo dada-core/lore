@@ -83,21 +83,69 @@ jobs:
             echo "::error::src/api/schema.d.ts is out of date: run 'npm run api' in web/ and commit the result."
             exit 1
           }
+      # ESLint, then the check for dashes over the whole repository.
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
 
-  install:
-    name: Installation with Docker Compose
-    needs: [server, web]
-    runs-on: ubuntu-latest
+  # The Docker image of the branch, built once and handed to the jobs that start it under the name
+  # docker-compose.yml gives it.
+  image:
+    name: Docker image
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          tags: lore:local
+          outputs: type=docker,dest=${{ runner.temp }}/lore.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image
+          path: ${{ runner.temp }}/lore.tar
+          retention-days: 3
+
+  # The vulnerabilities of the image, for information: the publication blocks on them (release.yml).
+  image-scan:
+    name: Image analysis
+    needs: image
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: Trivy, critical and high vulnerabilities that have a fix
+        env:
+          TRIVY: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+        run: |
+          docker run --rm -v "$RUNNER_TEMP:/scan" "$TRIVY" image --quiet --timeout 20m --input /scan/lore.tar \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --format table | tee "$RUNNER_TEMP/trivy.txt"
+          { echo '### Image analysis'; echo; echo '```'; cat "$RUNNER_TEMP/trivy.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  install:
+    name: Installation with Docker Compose
+    needs: image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
       - name: Start Lore and PostgreSQL
         run: |
+          docker load -i "$RUNNER_TEMP/lore.tar"
           echo "DB_PASSWORD=ci-$(openssl rand -hex 16)" > .env
-          docker compose up -d --build --wait --wait-timeout 300
+          docker compose up -d --wait --wait-timeout 300
       - name: A fresh installation asks for the initial setup
         run: |
           curl -fsS http://localhost:8080/api/v1/session | tee session.json
@@ -110,6 +158,156 @@ jobs:
           sh packaging/import-check.sh lore.log
       - name: The server command answers
         run: docker compose exec -T lore lore help
+      - name: Logs
+        if: failure()
+        run: docker compose logs
+
+  # The five minutes, timed in a browser: docker-compose.yml of the repository, the image of the
+  # branch, PostgreSQL downloaded. Three minutes of machine time at most (packaging/five-minutes.sh).
+  five-minutes:
+    name: Five minutes
+    needs: image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: The image of the branch, Playwright and Chromium
+        run: |
+          docker load -i "$RUNNER_TEMP/lore.tar"
+          npm ci --prefix web --no-audit --no-fund
+          cd web && npx playwright install --with-deps chromium
+      - name: From docker-compose.yml to the passage found
+        run: sh packaging/five-minutes.sh docker-compose.yml
+
+  # The journeys of version 0.1 in Chromium, Firefox and WebKit, against the image of the branch:
+  # axe on every screen, the keyboard, the headers (npm run e2e, web/e2e).
+  e2e:
+    name: Journeys in browsers
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: The image of the branch, Playwright and its browsers
+        run: |
+          docker load -i "$RUNNER_TEMP/lore.tar"
+          npm ci --prefix web --no-audit --no-fund
+          cd web && npx playwright install --with-deps chromium firefox webkit
+      - name: Start Lore and PostgreSQL
+        run: |
+          echo "DB_PASSWORD=ci-$(openssl rand -hex 16)" > .env
+          docker compose up -d --wait --wait-timeout 300
+          code=$(docker compose logs --no-log-prefix lore | grep -A2 "enter this setup code" | tail -1 | tr -d ' ')
+          echo "LORE_SETUP_CODE=$code" >> "$GITHUB_ENV"
+      - name: The journeys
+        working-directory: web
+        run: npm run e2e
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-report
+          path: |
+            web/e2e-report/
+            web/e2e-results/
+          retention-days: 7
+      - name: Logs
+        if: failure()
+        run: docker compose logs
+
+  # Version 0.1.0-beta.1, the only preview whose data the 0.1.0 promises to keep: its published
+  # docker-compose.yml and image, filled by its own import check, then the image of the branch on
+  # the same volumes, as the upgrade guide says.
+  upgrade:
+    name: Upgrade from 0.1.0-beta.1
+    needs: image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: Lore 0.1.0-beta.1, filled by its import check
+        run: |
+          docker load -i "$RUNNER_TEMP/lore.tar"
+          git fetch --depth 1 origin tag v0.1.0-beta.1
+          git show v0.1.0-beta.1:packaging/import-check.sh > "$RUNNER_TEMP/import-check.sh"
+          mkdir "$RUNNER_TEMP/lore" && cd "$RUNNER_TEMP/lore"
+          curl -fsSLO https://github.com/dada-core/lore/releases/download/v0.1.0-beta.1/docker-compose.yml
+          echo "DB_PASSWORD=ci-$(openssl rand -hex 16)" > .env
+          docker compose up -d --wait --wait-timeout 300
+          docker compose logs --no-log-prefix lore > beta.log
+          sh "$RUNNER_TEMP/import-check.sh" beta.log
+      - name: The image of the branch on the same volumes
+        working-directory: ${{ runner.temp }}/lore
+        run: |
+          sed -i 's|^    image: ghcr.io/dada-core/lore:.*$|    image: lore:local|' docker-compose.yml
+          docker compose up -d --wait --wait-timeout 300
+          sh "$GITHUB_WORKSPACE/packaging/upgrade-check.sh"
+      - name: Logs
+        if: failure()
+        working-directory: ${{ runner.temp }}/lore
+        run: docker compose logs
+
+  # A backup made with the commands of the documentation (backup.md, Docker Compose tab), restored
+  # as it says on a new, empty installation.
+  backup:
+    name: Backup and restore
+    needs: image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: An installation filled by the import check
+        run: |
+          docker load -i "$RUNNER_TEMP/lore.tar"
+          echo "DB_PASSWORD=ci-$(openssl rand -hex 16)" > .env
+          docker compose up -d --wait --wait-timeout 300
+          docker compose logs --no-log-prefix lore > lore.log
+          sh packaging/import-check.sh lore.log
+      - name: The backup, as the documentation writes it
+        run: |
+          docker compose exec -T postgres pg_dump -U lore -Fc lore > lore-$(date +%F).dump
+          docker run --rm -v lore_files:/data -v "$PWD":/sauvegardes alpine \
+            tar czf /sauvegardes/fichiers-$(date +%F).tar.gz --exclude=./tmp -C /data .
+          ls -l lore-*.dump fichiers-*.tar.gz
+          # Their names, kept for the restore: a job may run past midnight.
+          echo "DUMP=$(ls lore-*.dump)" >> "$GITHUB_ENV"
+          echo "FILES=$(ls fichiers-*.tar.gz)" >> "$GITHUB_ENV"
+      - name: A new, empty installation
+        run: |
+          docker compose down --volumes
+          docker compose up -d --wait --wait-timeout 300
+          curl -fsS http://localhost:8080/api/v1/session | grep -q '"setupRequired":true'
+      - name: The restore, as the documentation writes it
+        run: |
+          docker compose stop lore
+          docker compose exec -T postgres pg_restore -U lore -d lore --clean --if-exists < "$DUMP"
+          docker run --rm -v lore_files:/data -v "$PWD":/sauvegardes alpine \
+            tar xzf "/sauvegardes/$FILES" -C /data
+          docker compose start lore
+          for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
+          sh packaging/upgrade-check.sh
       - name: Logs
         if: failure()
         run: docker compose logs
@@ -175,6 +373,130 @@ jobs:
           name: packages-${{ matrix.arch }}
           path: build/dist/
           retention-days: 3
+
+  # The installation guide followed on a server with no PostgreSQL, Ubuntu 24.04: PostgreSQL 18 from
+  # the PGDG repository, the role and the database; then the .deb of 0.1.0-beta.1, filled by its own
+  # import check, upgraded to the .deb of the branch; then a backup with the commands of the
+  # Packages tab of backup.md, restored as it says on an emptied installation.
+  packages-guide:
+    name: Package guide, upgrade and backup on Ubuntu 24.04
+    needs: packages
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages-amd64
+          path: build/dist
+      - name: A server without PostgreSQL
+        run: |
+          sudo systemctl stop postgresql || true
+          sudo apt-get purge -y 'postgresql*' libpq-dev > /dev/null
+          sudo rm -rf /etc/postgresql /var/lib/postgresql
+      - name: PostgreSQL 18, as the guide says
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y postgresql-common gnupg
+          # -y answers the question the script asks before adding the repository.
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-18
+          printf 'lore-test\nlore-test\n' | sudo -u postgres createuser --pwprompt lore
+          sudo -u postgres createdb --owner lore lore
+      - name: Lore 0.1.0-beta.1, filled by its import check
+        run: |
+          git fetch --depth 1 origin tag v0.1.0-beta.1
+          git show v0.1.0-beta.1:packaging/import-check.sh > "$RUNNER_TEMP/import-check.sh"
+          curl -fsSLO https://github.com/dada-core/lore/releases/download/v0.1.0-beta.1/lore_0.1.0-beta.1_amd64.deb
+          sudo apt-get install -y ./lore_0.1.0-beta.1_amd64.deb
+          sudo sed -i 's/^LORE_DB_PASSWORD=.*/LORE_DB_PASSWORD=lore-test/' /etc/lore/lore.env
+          sudo systemctl enable --now lore
+          for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
+          curl -fsS localhost:8080/actuator/health/readiness | grep -q '"UP"'
+          # The messages alone, as the logs of a container: the check reads the code two lines lower.
+          sudo journalctl -u lore --no-pager -o cat > "$RUNNER_TEMP/beta.log"
+          sh "$RUNNER_TEMP/import-check.sh" "$RUNNER_TEMP/beta.log"
+      - name: The .deb of the branch on top of it
+        run: |
+          # The branch builds a SNAPSHOT, which dpkg ranks below 0.1.0-beta.1 (~SNAPSHOT before ~beta):
+          # installed over it all the same, as a release would be. The settings are kept.
+          sudo apt-get install -y --allow-downgrades -o Dpkg::Options::=--force-confold ./build/dist/lore_*_amd64.deb
+          [ "$(dpkg-query -W -f='${Version}' lore)" = "$(dpkg-deb -f build/dist/lore_*_amd64.deb Version)" ]
+          for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
+          curl -fsS localhost:8080/actuator/health/readiness | grep -q '"UP"'
+          # The settings of the installation are kept.
+          sudo grep -q '^LORE_DB_PASSWORD=lore-test$' /etc/lore/lore.env
+          sh packaging/upgrade-check.sh
+      - name: The backup, as the documentation writes it
+        run: |
+          sudo -u postgres pg_dump -Fc lore > lore-$(date +%F).dump
+          sudo tar czf fichiers-$(date +%F).tar.gz --exclude=./tmp -C /var/lib/lore/files .
+          ls -l lore-*.dump fichiers-*.tar.gz
+          # Their names, kept for the restore: a job may run past midnight.
+          echo "DUMP=$(ls lore-*.dump)" >> "$GITHUB_ENV"
+          echo "FILES=$(ls fichiers-*.tar.gz)" >> "$GITHUB_ENV"
+      - name: An emptied installation
+        run: |
+          sudo systemctl stop lore
+          sudo -u postgres dropdb lore
+          sudo -u postgres createdb --owner lore lore
+          sudo find /var/lib/lore/files -mindepth 1 -delete
+          sudo systemctl start lore
+          for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
+          curl -fsS localhost:8080/actuator/health/readiness | grep -q '"UP"'
+          curl -fsS localhost:8080/api/v1/session | grep -q '"setupRequired":true'
+      - name: The restore, as the documentation writes it
+        run: |
+          sudo systemctl stop lore
+          sudo -u postgres pg_restore -d lore --clean --if-exists < "$DUMP"
+          sudo tar xzf "$FILES" -C /var/lib/lore/files
+          sudo systemctl start lore
+          for _ in $(seq 90); do curl -fsS localhost:8080/actuator/health/readiness 2>/dev/null | grep -q UP && break; sleep 2; done
+          curl -fsS localhost:8080/actuator/health/readiness | grep -q '"UP"'
+          sh packaging/upgrade-check.sh
+      - name: Logs
+        if: failure()
+        run: sudo journalctl -u lore --no-pager | tail -n 200
+
+  # The universal archive on Windows and macOS, said usable there by the README and the guide: the
+  # lore command answers, and Lore started without a database stops with the variable to check.
+  archive-os:
+    name: Archive on ${{ matrix.os }}
+    needs: packages
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages-amd64
+          path: dist
+      - name: Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive (Get-Item dist\lore-*.zip).FullName -DestinationPath archive
+          Set-Location (Get-Item archive\lore-*).FullName
+          Copy-Item conf\lore.env.example conf\lore.env
+          $help = cmd /c "bin\lore.cmd help 2>&1" | Out-String
+          if ($help -notmatch 'reset-password') { Write-Output $help; exit 1 }
+          $start = cmd /c "bin\lore.cmd 2>&1" | Out-String
+          if ($LASTEXITCODE -eq 0 -or $start -notmatch 'LORE_DB_') { Write-Output $start; exit 1 }
+          exit 0
+      - name: macOS
+        if: runner.os == 'macOS'
+        run: |
+          mkdir archive && tar xzf dist/lore-*.tar.gz -C archive
+          cd archive/lore-*
+          cp conf/lore.env.example conf/lore.env
+          bin/lore help | grep -q reset-password
+          if bin/lore > start.log 2>&1; then cat start.log; exit 1; fi
+          grep -q 'LORE_DB_' start.log || { cat start.log; exit 1; }
 
   # Each package installed, started and removed on every supported release, in containers.
   packages-test:
@@ -293,7 +615,7 @@ jobs:
   checks:
     name: Checks
     if: always()
-    needs: [changes, server, web, install, packages, packages-test, packages-systemd]
+    needs: [changes, server, web, image, install, five-minutes, e2e, upgrade, backup, packages, packages-test, packages-systemd, packages-guide, archive-os]
     runs-on: ubuntu-latest
     steps:
       - name: Every required job passed or was not needed

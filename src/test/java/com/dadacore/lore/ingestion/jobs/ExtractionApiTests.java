@@ -3,6 +3,8 @@ package com.dadacore.lore.ingestion.jobs;
 import static com.dadacore.lore.support.Browser.body;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -12,6 +14,7 @@ import com.dadacore.lore.support.Browser;
 import com.dadacore.lore.support.Response;
 import com.dadacore.lore.support.SampleFiles;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.TestPropertySource;
 
@@ -115,6 +118,23 @@ class ExtractionApiTests extends ApiTest {
         assertThat(document.text("currentVersion.extractionStatus")).isEqualTo("FAILED");
         assertThat(document.text("currentVersion.extractionError")).isEqualTo("encrypted");
         assertThat(document.flag("actions.retry")).isFalse();
+        assertThat(jdbc.sql("select count(*) from extraction_job").query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void aWordDocumentCannotMakeTheExtractionProcessReadAFileOfTheServer(@TempDir Path folder) throws Exception {
+        Path secret = Files.writeString(folder.resolve("secret.txt"), "TOP-SECRET-VALUE");
+        byte[] docx = SampleFiles.docxWithDoctype("<!DOCTYPE w:document [<!ENTITY xxe SYSTEM \"" + secret.toUri() + "\">]>",
+                "Valeur : &xxe;");
+
+        Response document = waitForExtraction(importFile("xxe.docx", docx));
+
+        // Read without the entity, or refused as damaged: either way, never the file.
+        assertThat(document.text("currentVersion.extractionStatus")).isIn("INDEXED", "FAILED");
+        assertThat(jdbc.sql("select content from chunk").query(String.class).list())
+                .noneSatisfy(content -> assertThat(content).contains("TOP-SECRET-VALUE"));
+        assertThat(jdbc.sql("select html from rendering_part").query(String.class).list())
+                .noneSatisfy(html -> assertThat(html).contains("TOP-SECRET-VALUE"));
         assertThat(jdbc.sql("select count(*) from extraction_job").query(Integer.class).single()).isZero();
     }
 

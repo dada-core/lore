@@ -21,9 +21,6 @@ export function loginRefusal(i18n: I18n, error: unknown): string {
         : '';
       return i18n.t('login.invalid') + warning;
     }
-    if (error.code === 'login_locked') {
-      return i18n.t('login.locked', { duration: i18n.duration(error.number('retryAfterMinutes') ?? 15) });
-    }
     if (error.code === 'account_disabled') return i18n.t('login.disabled');
   }
   return errorMessage(i18n, error);

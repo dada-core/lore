@@ -361,7 +361,8 @@ function DocumentView({ document }: { document: Document }) {
             )}
             {notice === 'missing' && !olderVersion && <Callout role="status">{t('reader.missing')}</Callout>}
             {otherVersion && !olderVersion && <Callout role="status">{t('reader.changed', { version: target.version ?? 0 })}</Callout>}
-            {olderVersion && !pdf && target.place === null && (
+            {/* A link to an older version without a place, of a PDF as of any other document. */}
+            {olderVersion && target.place === null && (
               <Callout role="status">
                 <div className="row-between">
                   <span>{t('version.linkVersion', { number: target.version ?? 0 })}</span>
@@ -371,13 +372,15 @@ function DocumentView({ document }: { document: Document }) {
                 </div>
               </Callout>
             )}
-            {olderVersion && (sectionFound !== null || pdf) && (
+            {olderVersion && target.place !== null && (sectionFound !== null || pdf) && (
               <Callout role="status">
                 <div className="row-between">
                   <span>
-                    {(pdf ? pageKept : sectionFound)
-                      ? t('version.linkFound', { number: target.version ?? 0 })
-                      : t('version.linkChanged', { number: target.version ?? 0 })}
+                    {pdf && pageKept
+                      ? t('version.linkPage', { number: target.version ?? 0, page: target.page ?? 0 })
+                      : !pdf && sectionFound
+                        ? t('version.linkFound', { number: target.version ?? 0 })
+                        : t('version.linkChanged', { number: target.version ?? 0 })}
                   </span>
                   <Link className="btn" to={`/documents/${document.id}/versions/${target.version}`}>
                     {t('version.show', { number: target.version ?? 0 })}

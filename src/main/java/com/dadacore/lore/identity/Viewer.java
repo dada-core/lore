@@ -3,6 +3,7 @@ package com.dadacore.lore.identity;
 import java.util.UUID;
 
 import com.dadacore.lore.shared.ApiException;
+import com.dadacore.lore.shared.Secrets;
 
 /**
  * The signed-in person making the request, loaded from the database on every request: a role
@@ -25,6 +26,13 @@ public record Viewer(
 
     public boolean isAdmin() {
         return role.isAdmin();
+    }
+
+    /** Without the session identifier, the value of the session cookie: logs never hold it. */
+    @Override
+    public String toString() {
+        return "Viewer[userId=" + userId + ", organizationId=" + organizationId + ", role=" + role
+                + ", sessionId=" + Secrets.hide(sessionId) + ", ip=" + ip + "]";
     }
 
     public boolean isOwner() {

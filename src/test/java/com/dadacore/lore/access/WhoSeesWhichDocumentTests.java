@@ -19,6 +19,8 @@ import com.dadacore.lore.ingestion.Rendering;
 import com.dadacore.lore.support.ApiTest;
 import com.dadacore.lore.support.Browser;
 import com.dadacore.lore.support.Response;
+import com.dadacore.lore.support.RouteLog;
+import com.dadacore.lore.support.RouteMatrix;
 import com.dadacore.lore.support.SampleFiles;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
@@ -85,6 +87,12 @@ class WhoSeesWhichDocumentTests extends ApiTest {
         organization();
         archivedAndObsolete();
         List<Probe> probes = List.of(
+                // The library of the space, and the home page of each person (what they list, below).
+                probe("GET the documents of the space", p -> as(p).get(space + "/documents"), 200, 200, 200, 200, 200, 404, 401),
+                probe("GET the summary of the space", p -> as(p).get(space + "/documents/summary"), 200, 200, 200, 200, 200, 404, 401),
+                probe("GET recent documents", p -> as(p).get("/api/v1/documents/recent"), 200, 200, 200, 200, 200, 200, 401),
+                probe("GET imports to handle", p -> as(p).get("/api/v1/imports/attention"), 200, 200, 200, 200, 200, 200, 401),
+                probe("GET import limits", p -> as(p).get("/api/v1/imports/limits"), 200, 200, 200, 200, 200, 200, 401),
                 // Versions and statuses: an archived document is seen by the maintainers only.
                 probe("GET AR, archived", p -> as(p).get(ar), 200, 200, 200, 404, 404, 404, 401),
                 probe("GET AR versions", p -> as(p).get(ar + "/versions"), 200, 200, 200, 404, 404, 404, 401),
@@ -168,14 +176,17 @@ class WhoSeesWhichDocumentTests extends ApiTest {
                         200, 200, 200, 200, 403, 404, 401),
                 probe("PATCH R2, language", p -> as(p).patch(r2, body("language", "en")), 200, 200, 200, 404, 404, 404, 401));
 
-        return probes.stream().flatMap(probe -> Arrays.stream(Person.values()).map(person -> {
+        Stream<DynamicTest> answers = probes.stream().flatMap(probe -> Arrays.stream(Person.values()).map(person -> {
             int expected = probe.expected()[person.ordinal()];
             String name = probe.route() + " as " + person.name().toLowerCase() + " gives " + expected;
             return DynamicTest.dynamicTest(name, () -> {
-                Response response = probe.call().apply(person);
+                Response response = RouteLog.probe(WhoSeesWhichDocumentTests.class, () -> probe.call().apply(person));
                 assertThat(response.status()).as(name + ", got " + response).isEqualTo(expected);
             });
         }));
+        // Last: every route this matrix answers for in RouteMatrix was probed above.
+        return Stream.concat(answers, Stream.of(DynamicTest.dynamicTest("every route of the matrix is probed",
+                () -> RouteMatrix.assertProbed(WhoSeesWhichDocumentTests.class))));
     }
 
     @Test

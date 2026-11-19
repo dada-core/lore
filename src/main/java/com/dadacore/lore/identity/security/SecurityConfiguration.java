@@ -19,6 +19,9 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
  * <ul>
  *   <li>Sessions stored in PostgreSQL, cookie {@code HttpOnly} and {@code SameSite=Lax}, marked
  *       {@code Secure} when the public address uses HTTPS.</li>
+ *   <li>Behind an HTTPS public address ({@code LORE_PUBLIC_URL}), the session and CSRF cookies are
+ *       named with the {@code __Host-} prefix: the browser keeps them to this very host, over
+ *       HTTPS, for the whole site, and no other site of the domain can set them.</li>
  *   <li>CSRF protection on every request that changes something, sign-in included.</li>
  *   <li>Everything under {@code /api/} requires a session, except the few addresses listed below.
  *       The rights within the organization are checked by each service, from the database.</li>
@@ -28,6 +31,10 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
 class SecurityConfiguration {
 
     static final String SESSION_COOKIE = "LORE_SESSION";
+    static final String CSRF_COOKIE = "XSRF-TOKEN";
+
+    /** Only for a cookie marked {@code Secure}, with the path {@code /} and no domain. */
+    static final String HOST_PREFIX = "__Host-";
 
     private static final String CONTENT_SECURITY_POLICY = String.join("; ",
             "default-src 'self'",
@@ -78,6 +85,8 @@ class SecurityConfiguration {
     @Bean
     CookieCsrfTokenRepository csrfTokenRepository(PublicUrl publicUrl) {
         CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        // The interface reads it under both names (web/src/api/client.ts).
+        repository.setCookieName(cookieName(CSRF_COOKIE, publicUrl));
         repository.setCookiePath("/");
         repository.setCookieCustomizer(cookie -> {
             cookie.sameSite("Lax");
@@ -91,7 +100,7 @@ class SecurityConfiguration {
     @Bean
     CookieSerializer sessionCookieSerializer(PublicUrl publicUrl) {
         DefaultCookieSerializer serializer = new DefaultCookieSerializer();
-        serializer.setCookieName(SESSION_COOKIE);
+        serializer.setCookieName(cookieName(SESSION_COOKIE, publicUrl));
         serializer.setCookiePath("/");
         serializer.setUseHttpOnlyCookie(true);
         serializer.setSameSite("Lax");
@@ -100,5 +109,13 @@ class SecurityConfiguration {
             serializer.setUseSecureCookie(publicUrl.isSecure());
         }
         return serializer;
+    }
+
+    /**
+     * The name of a cookie: with the {@code __Host-} prefix when {@code LORE_PUBLIC_URL} uses HTTPS
+     * (the cookie is then {@code Secure}). Over HTTP, a browser would refuse a prefixed cookie.
+     */
+    static String cookieName(String name, PublicUrl publicUrl) {
+        return publicUrl.isSecure() ? HOST_PREFIX + name : name;
     }
 }

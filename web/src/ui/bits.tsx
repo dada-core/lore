@@ -47,10 +47,10 @@ export function useDebounced<T>(value: T, delay: number): T {
   return debounced;
 }
 
-/** Sets the title of the browser tab: "Sign in – Lore". */
+/** Sets the title of the browser tab: "Sign in · Lore". */
 export function useDocumentTitle(title: string): void {
   useEffect(() => {
-    document.title = title ? `${title} – Lore` : 'Lore';
+    document.title = title ? `${title} · Lore` : 'Lore';
   }, [title]);
 }
 

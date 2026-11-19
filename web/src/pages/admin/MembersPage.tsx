@@ -157,7 +157,7 @@ export function MembersPage() {
                     {member.manageable ? (
                       <Menu
                         triggerClassName={`pill ${roleClass(member.role as Role)}`}
-                        label={t('members.roleOf', { name: member.displayName })}
+                        label={t('members.roleOf', { name: member.displayName, role: t(`role.${member.role as Role}`) })}
                         trigger={<>{t(`role.${member.role as Role}`)}<Icon name="chevron" /></>}
                       >
                         {ROLES.filter((role) => role !== 'OWNER' || viewer.isOwner).map((role) => (

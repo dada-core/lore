@@ -3,6 +3,13 @@ package com.dadacore.lore.identity;
 import static com.dadacore.lore.support.Browser.body;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
 import com.dadacore.lore.support.ApiTest;
 import com.dadacore.lore.support.Browser;
 import com.dadacore.lore.support.Response;
@@ -62,6 +69,36 @@ class LoginApiTests extends ApiTest {
     }
 
     @Test
+    void guessesSentTogetherGetNoMoreThanGuessesSentOneByOne() throws Exception {
+        setUpOrganization();
+        int guesses = 16;
+        List<Browser> attackers = new ArrayList<>();
+        for (int i = 0; i < guesses; i++) {
+            attackers.add(browser().from("203.0.113.7"));
+        }
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Integer>> statuses = new ArrayList<>();
+        try (ExecutorService pool = Executors.newFixedThreadPool(guesses)) {
+            for (int i = 0; i < guesses; i++) {
+                Browser attacker = attackers.get(i);
+                String guess = "guess-" + i;
+                statuses.add(pool.submit(() -> {
+                    start.await();
+                    return attacker.post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", guess)).status();
+                }));
+            }
+            start.countDown();
+            for (Future<Integer> status : statuses) {
+                assertThat(status.get()).isIn(401, 429);
+            }
+        }
+
+        assertThat(auditActions().stream().filter("auth.login_failed"::equals)).hasSize(5);
+        assertThat(browser().from("203.0.113.7").post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", PASSWORD))
+                .status()).isEqualTo(429);
+    }
+
+    @Test
     void aBlockFromOneMachineDoesNotLockTheOwnerOut() {
         setUpOrganization();
         Browser attacker = browser().from("203.0.113.7");
@@ -73,6 +110,39 @@ class LoginApiTests extends ApiTest {
                 .post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", PASSWORD));
 
         assertThat(owner.status()).isEqualTo(200);
+    }
+
+    @Test
+    void aForwardedAddressThatIsNotAnAddressDoesNotEscapeTheBlock() {
+        setUpOrganization();
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            Response response = browser().from(randomText(3000))
+                    .post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", "guess-" + attempt));
+            assertThat(response.status()).as(response.toString()).isEqualTo(401);
+        }
+
+        Response fifth = browser().from(randomText(3000))
+                .post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", "guess-5"));
+        assertThat(fifth.status()).as(fifth.toString()).isEqualTo(429);
+        Response evenWithTheRightPassword = browser().from(randomText(3000))
+                .post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", PASSWORD));
+        assertThat(evenWithTheRightPassword.status()).as(evenWithTheRightPassword.toString()).isEqualTo(429);
+
+        assertThat(jdbc.sql("select distinct ip from audit_event where action = 'auth.login_failed'").query(String.class).list())
+                .containsExactly("invalid");
+        assertThat(jdbc.sql("select max(length(key)) from login_throttle").query(Integer.class).single()).isLessThan(200);
+        assertThat(jdbc.sql("select key from login_throttle").query(String.class).list())
+                .noneSatisfy(key -> assertThat(key).containsIgnoringCase("wilfried"));
+    }
+
+    @Test
+    void aProxyOnTheSameMachineGivesTheAddressOfTheClient() {
+        setUpOrganization();
+
+        browser().from("203.0.113.7").post("/api/v1/auth/login", body("email", OWNER_EMAIL, "password", "guess"));
+
+        assertThat(jdbc.sql("select ip from audit_event where action = 'auth.login_failed'").query(String.class).single())
+                .isEqualTo("203.0.113.7");
     }
 
     @Test
@@ -164,5 +234,16 @@ class LoginApiTests extends ApiTest {
                 .contains("default-src 'self'", "frame-ancestors 'none'");
         assertThat(response.headers().firstValue("X-Frame-Options")).contains("DENY");
         assertThat(response.headers().firstValue("X-Content-Type-Options")).contains("nosniff");
+    }
+
+    /** Letters and digits drawn at random: a text that compresses badly, without the commas of a list. */
+    private static String randomText(int length) {
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        java.util.Random random = new java.util.Random();
+        StringBuilder text = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            text.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        }
+        return text.toString();
     }
 }

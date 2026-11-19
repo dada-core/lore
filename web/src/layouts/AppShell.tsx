@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { createContext, Fragment, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, Fragment, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate, useSearchParams } from 'react-router';
 import { useOpenImport } from '../documents/documents';
 import { ImportDialog } from '../documents/ImportDialog';
@@ -19,8 +19,10 @@ const NARROW = '(max-width: 960px)';
 interface Shell {
   /** Shows the sidebar: a drawer on small screens, the unfolded column otherwise. */
   showNavigation: () => void;
+  /** Whether the drawer of small screens is open. */
+  drawerOpen: boolean;
 }
-const ShellContext = createContext<Shell>({ showNavigation: () => {} });
+const ShellContext = createContext<Shell>({ showNavigation: () => {}, drawerOpen: false });
 
 export function isTyping(): boolean {
   const element = document.activeElement;
@@ -62,6 +64,28 @@ export function AppShell() {
       title.focus({ preventScroll: true });
     }
   }, [pathname]);
+
+  // The drawer takes the focus when it opens, and gives it back to the button that opened it when
+  // it closes, unless a new view has put it on its title. A link of the drawer may open a view whose
+  // title waits for its data: the button of the drawer in that view, then, never a link of a sidebar
+  // being hidden.
+  const drawerOpener = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (drawerOpen) {
+      // Safari does not focus a button it taps: the button of the drawer, then.
+      const active = document.activeElement;
+      drawerOpener.current = active instanceof HTMLElement && active !== document.body
+        ? active
+        : document.querySelector<HTMLElement>('.menu-btn');
+      document.querySelector<HTMLElement>('#sidebar a, #sidebar button')?.focus();
+      return;
+    }
+    const opener = drawerOpener.current;
+    drawerOpener.current = null;
+    const active = document.activeElement;
+    if (!opener || (active && active !== document.body && !document.getElementById('sidebar')?.contains(active))) return;
+    (opener.isConnected ? opener : document.querySelector<HTMLElement>('.menu-btn'))?.focus();
+  }, [drawerOpen]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -125,7 +149,7 @@ export function AppShell() {
   };
 
   return (
-    <ShellContext value={{ showNavigation }}>
+    <ShellContext value={{ showNavigation, drawerOpen }}>
       <PaletteContext value={openPalette}>
       <div className={navShown ? 'app' : 'app hide-nav'}>
         <Sidebar open={drawerOpen} onFold={toggleNav} />
@@ -320,7 +344,7 @@ export interface Crumb {
 /** A view: its header (breadcrumb on the left, actions on the right) and its content. */
 export function View({ crumbs, actions, children }: { crumbs: Crumb[]; actions?: ReactNode; children: ReactNode }) {
   const { t } = useI18n();
-  const { showNavigation } = useContext(ShellContext);
+  const { showNavigation, drawerOpen } = useContext(ShellContext);
   return (
     <>
       <header className="view-header">
@@ -331,6 +355,7 @@ export function View({ crumbs, actions, children }: { crumbs: Crumb[]; actions?:
           aria-label={t('nav.showSidebar')}
           title={`${t('nav.showSidebar')} ([)`}
           aria-controls="sidebar"
+          aria-expanded={drawerOpen}
         >
           <Icon name="sidebar-left" />
         </button>

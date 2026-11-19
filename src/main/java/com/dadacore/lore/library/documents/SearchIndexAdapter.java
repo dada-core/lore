@@ -556,8 +556,9 @@ class SearchIndexAdapter implements SearchIndex {
                 where c.tsv_lang @@ ?::tsquery or c.tsv_simple @@ ?::tsquery
             ),
             -- The documents the person may read, before anything is ranked or counted. A version being
-            -- extracted for the first time is not found yet; a scanned or failed one by its title and
-            -- description only, having no passage. A word left out, anywhere, leaves a document out.
+            -- extracted for the first time is not found yet; a failed one by its title and description
+            -- only, having no passage; a scanned one by them and the passages of its pages of text. A
+            -- word left out, anywhere, leaves a document out.
             readable as (
                 select d.id, d.space_id, d.folder_id, d.title, d.description, d.category, d.status, d.restricted,
                     d.updated_at, d.search_language, d.current_version_id, d.replaced_by_id,

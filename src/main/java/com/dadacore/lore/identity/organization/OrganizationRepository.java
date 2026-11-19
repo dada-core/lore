@@ -19,7 +19,7 @@ public class OrganizationRepository {
 
     /**
      * The organization of this installation. Version 0.1 has one per installation, created at
-     * setup; the data model already holds several, for the hosted offer.
+     * setup; the data model already holds several.
      */
     public Optional<Organization> installation() {
         return jdbc.sql("select id, name, slug, created_at from organization order by created_at, id limit 1")

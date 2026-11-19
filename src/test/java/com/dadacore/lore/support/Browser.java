@@ -91,6 +91,7 @@ public final class Browser {
     }
 
     public Response send(String method, String path, Object body) {
+        RouteLog.record(method, path);
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path))
                 .header("User-Agent", userAgent)
                 .header("Accept", "application/json");
@@ -124,6 +125,7 @@ public final class Browser {
      * given as {@code "name", "value"} pairs (a name may come back, for a list).
      */
     public Response upload(String path, String filename, byte[] content, String... fields) {
+        RouteLog.record("POST", path);
         String boundary = "----lore-test-" + System.nanoTime();
         java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
         java.nio.charset.Charset utf8 = java.nio.charset.StandardCharsets.UTF_8;
@@ -169,6 +171,7 @@ public final class Browser {
 
     /** A request with the headers given as {@code "name", "value"} pairs, the answer read as bytes. */
     public Raw raw(String method, String path, String... headers) {
+        RouteLog.record(method, path);
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path))
                 .header("User-Agent", userAgent)
                 .method(method, HttpRequest.BodyPublishers.noBody());

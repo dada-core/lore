@@ -1,13 +1,10 @@
 package com.dadacore.lore.identity.login;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.dadacore.lore.audit.AuditEntry;
-import com.dadacore.lore.audit.AuditLog;
 import com.dadacore.lore.identity.OrganizationRole;
 import com.dadacore.lore.identity.account.MembershipRepository;
 import com.dadacore.lore.identity.account.UserAccount;
@@ -35,18 +32,15 @@ class LoginService {
     private final MembershipRepository memberships;
     private final PasswordHasher hasher;
     private final LoginThrottle throttle;
-    private final AuditLog audit;
     private final Clock clock;
 
     LoginService(OrganizationRepository organizations, UserAccountRepository accounts,
-            MembershipRepository memberships, PasswordHasher hasher, LoginThrottle throttle,
-            AuditLog audit, Clock clock) {
+            MembershipRepository memberships, PasswordHasher hasher, LoginThrottle throttle, Clock clock) {
         this.organizations = organizations;
         this.accounts = accounts;
         this.memberships = memberships;
         this.hasher = hasher;
         this.throttle = throttle;
-        this.audit = audit;
         this.clock = clock;
     }
 
@@ -61,11 +55,16 @@ class LoginService {
             checks.fail("password", "required");
         }
         checks.orThrow();
-        email = email.toLowerCase(java.util.Locale.ROOT);
+        String address = email.toLowerCase(java.util.Locale.ROOT);
+        return throttle.oneAtATime(address, () -> check(organization, settings, address, password, ip));
+    }
 
+    /** Within the turn of the address: the block, the password, then the failure counted. */
+    private LoginResult check(Organization organization, OrganizationSettings settings, String email,
+            String password, String ip) {
         Optional<Instant> lockedUntil = throttle.lockedUntil(email, ip);
         if (lockedUntil.isPresent()) {
-            return new LoginResult.Locked(minutesUntil(lockedUntil.get()));
+            return new LoginResult.Locked(throttle.minutesUntil(lockedUntil.get()));
         }
 
         Optional<UserAccount> account = accounts.findByEmail(email);
@@ -89,30 +88,12 @@ class LoginService {
             return new LoginResult.Success(user.id(), organization.id(), settings.sessionTimeoutMinutes());
         }
 
-        Duration lockout = Duration.ofMinutes(settings.loginLockoutMinutes());
-        LoginThrottle.Failure failure = throttle.recordFailure(email, ip, settings.loginMaxAttempts(), lockout);
         UUID accountId = account.map(UserAccount::id).orElse(null);
-        audit.record(AuditEntry.of(organization.id(), null, "auth.login_failed")
-                .resource("account", accountId)
-                .ip(ip)
-                .detail("email", email)
-                .build());
+        LoginThrottle.Failure failure = throttle.recordFailure(organization.id(), settings, null, accountId, email, ip);
         if (failure.locked()) {
-            audit.record(AuditEntry.of(organization.id(), null, "auth.locked")
-                    .resource("account", accountId)
-                    .ip(ip)
-                    .detail("email", email)
-                    .detail("minutes", settings.loginLockoutMinutes())
-                    .detail("scope", failure.addressLocked() ? "address" : "address_and_ip")
-                    .build());
             return new LoginResult.Locked(settings.loginLockoutMinutes());
         }
         return new LoginResult.Invalid(failure.remainingAttempts(), settings.loginLockoutMinutes());
-    }
-
-    private long minutesUntil(Instant until) {
-        long seconds = Duration.between(clock.instant(), until).toSeconds();
-        return Math.max(1, (seconds + 59) / 60);
     }
 
     sealed interface LoginResult {

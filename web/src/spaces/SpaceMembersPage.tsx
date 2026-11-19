@@ -127,7 +127,7 @@ export function SpaceMembersPage() {
                         {manager ? (
                           <Menu
                             triggerClassName={`pill ${spaceRoleClass(member.role)}`}
-                            label={t('spaceMembers.roleOf', { name: member.displayName })}
+                            label={t('spaceMembers.roleOf', { name: member.displayName, role: t(`spaceRole.${member.role as SpaceRole}`) })}
                             trigger={<>{t(`spaceRole.${member.role as SpaceRole}`)}<Icon name="chevron" /></>}
                           >
                             {SPACE_ROLES.map((role) => (

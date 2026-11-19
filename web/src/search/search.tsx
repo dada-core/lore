@@ -59,7 +59,8 @@ export function placeLabel(i18n: I18n, passage: { anchor: string; page?: number 
 }
 
 // The last searches, kept in this browser for the person signed in, never on the server. Cleared at
-// sign-out, so that a shared computer does not show them to the next person.
+// sign-out and when the session expires, so that a shared computer does not show them to the next
+// person.
 const RECENT = 'lore.searches.';
 const KEPT = 8;
 

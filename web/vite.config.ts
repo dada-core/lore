@@ -1,9 +1,9 @@
-/// <reference types="vitest/config" />
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+import { configDefaults } from 'vitest/config';
 
 const PDFJS = fileURLToPath(new URL('./node_modules/pdfjs-dist/', import.meta.url));
 
@@ -67,5 +67,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Above the 5 seconds of a single wait (src/test/setup.ts): a failure names what is missing.
+    testTimeout: 15000,
+    // The journeys in real browsers run with Playwright (npm run e2e).
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
 });

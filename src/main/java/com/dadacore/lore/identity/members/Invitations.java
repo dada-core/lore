@@ -28,12 +28,14 @@ import com.dadacore.lore.identity.security.PasswordHasher;
 import com.dadacore.lore.identity.security.Tokens;
 import com.dadacore.lore.shared.ApiException;
 import com.dadacore.lore.shared.Checks;
+import com.dadacore.lore.shared.Secrets;
 import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Invitation links to join the organization, passed on by the person who creates them: no mail
@@ -54,11 +56,12 @@ class Invitations {
     private final PasswordHasher hasher;
     private final AuditLog audit;
     private final InvitationSpaces invitationSpaces;
+    private final TransactionTemplate transaction;
     private final Clock clock;
 
     Invitations(JdbcClient jdbc, OrganizationRepository organizations, UserAccountRepository accounts,
             MembershipRepository memberships, PasswordHasher hasher, AuditLog audit,
-            InvitationSpaces invitationSpaces, Clock clock) {
+            InvitationSpaces invitationSpaces, TransactionTemplate transaction, Clock clock) {
         this.jdbc = jdbc;
         this.organizations = organizations;
         this.accounts = accounts;
@@ -66,6 +69,7 @@ class Invitations {
         this.hasher = hasher;
         this.audit = audit;
         this.invitationSpaces = invitationSpaces;
+        this.transaction = transaction;
         this.clock = clock;
     }
 
@@ -83,6 +87,12 @@ class Invitations {
     }
 
     record CreatedInvitation(InvitationView invitation, String url) {
+
+        /** The link holds the token: it stays out of the logs. */
+        @Override
+        public String toString() {
+            return "CreatedInvitation[invitation=" + invitation + ", url=" + Secrets.hide(url) + "]";
+        }
     }
 
     /**
@@ -97,6 +107,13 @@ class Invitations {
     }
 
     record JoinRequest(String token, String displayName, String email, String password) {
+
+        /** The token and the password stay out of the logs. */
+        @Override
+        public String toString() {
+            return "JoinRequest[token=" + Secrets.hide(token) + ", displayName=" + displayName + ", email=" + email
+                    + ", password=" + Secrets.hide(password) + "]";
+        }
     }
 
     record Joined(UUID userId, UUID organizationId, int sessionTimeoutMinutes) {
@@ -192,6 +209,21 @@ class Invitations {
                 .build());
     }
 
+    /**
+     * Revokes the links a person created that are still pending: they no longer have the right to
+     * create them (no longer administrator, disabled or removed). Done in the caller's transaction.
+     *
+     * @return the number of links revoked
+     */
+    int revokeCreatedBy(UUID organizationId, UUID creatorId) {
+        return jdbc.sql("""
+                update invitation set revoked_at = now()
+                where organization_id = ? and created_by = ? and used_at is null and revoked_at is null and expires_at > ?
+                """)
+                .params(organizationId, creatorId, Timestamp.from(clock.instant()))
+                .update();
+    }
+
     InvitationDetails inspect(String token) {
         Valid valid = find(token, false).orElseThrow(Invitations::invalidLink);
         Organization organization = organizations.find(valid.organizationId()).orElseThrow(Invitations::invalidLink);
@@ -208,9 +240,41 @@ class Invitations {
      * remains in the history) comes back with their account, but only through an invitation
      * reserved to their address: an open link would let whoever holds it take over the account.
      */
-    @Transactional
     Joined accept(JoinRequest request, String ip) {
-        Valid valid = find(request.token(), true).orElseThrow(Invitations::invalidLink);
+        // Hashed before the transaction, once the link and the fields have been checked a first time:
+        // the computation may wait for its turn (PasswordHasher), and the transaction would hold a
+        // connection and the lock of the invitation meanwhile.
+        String hash = hasher.hash(joining(find(request.token(), false).orElseThrow(Invitations::invalidLink), request)
+                .password());
+        return transaction.execute(status -> join(request, hash, ip));
+    }
+
+    private Joined join(JoinRequest request, String hash, String ip) {
+        Joining joining = joining(find(request.token(), true).orElseThrow(Invitations::invalidLink), request);
+        Valid valid = joining.invitation();
+        OrganizationSettings settings = joining.settings();
+        String displayName = joining.displayName();
+        String email = joining.email();
+        Optional<UserAccount> former = joining.former();
+        UserAccount account;
+        if (former.isPresent()) {
+            account = former.get();
+            accounts.updateProfile(account.id(), displayName, account.locale());
+            accounts.updatePassword(account.id(), hash);
+            accounts.updateStatus(account.id(), AccountStatus.ACTIVE);
+        } else {
+            try {
+                account = accounts.create(email, displayName, hash, null);
+            } catch (DuplicateKeyException e) {
+                Checks.start().fail("email", "email_taken").orThrow();
+                return null;
+            }
+        }
+        return joined(valid, settings, account, displayName, former.isPresent(), ip);
+    }
+
+    /** The request, checked against the invitation: the field errors are thrown. */
+    private Joining joining(Valid valid, JoinRequest request) {
         OrganizationSettings settings = organizations.settings(valid.organizationId());
         Checks checks = Checks.start();
         String displayName = checks.text("displayName", request.displayName(), 120);
@@ -231,20 +295,15 @@ class Invitations {
             }
         }
         checks.orThrow();
-        UserAccount account;
-        if (former.isPresent()) {
-            account = former.get();
-            accounts.updateProfile(account.id(), displayName, account.locale());
-            accounts.updatePassword(account.id(), hasher.hash(password));
-            accounts.updateStatus(account.id(), AccountStatus.ACTIVE);
-        } else {
-            try {
-                account = accounts.create(email, displayName, hasher.hash(password), null);
-            } catch (DuplicateKeyException e) {
-                Checks.start().fail("email", "email_taken").orThrow();
-                return null;
-            }
-        }
+        return new Joining(valid, settings, displayName, email, password, former);
+    }
+
+    private record Joining(Valid invitation, OrganizationSettings settings, String displayName, String email,
+            String password, Optional<UserAccount> former) {
+    }
+
+    private Joined joined(Valid valid, OrganizationSettings settings, UserAccount account, String displayName,
+            boolean returning, String ip) {
         OrganizationRole role = OrganizationRole.valueOf(valid.role());
         memberships.add(valid.organizationId(), account.id(), role);
         List<InvitedSpace> spaces = invitationSpaces.join(valid.id(), valid.organizationId(), account.id());
@@ -258,7 +317,7 @@ class Invitations {
                 .detail("name", displayName)
                 .detail("role", role.name())
                 .detail("invitedBy", valid.createdByName())
-                .detail("returning", former.isPresent())
+                .detail("returning", returning)
                 .detail("spaces", names(spaces))
                 .build());
         return new Joined(account.id(), valid.organizationId(), settings.sessionTimeoutMinutes());

@@ -3,6 +3,7 @@ import { fakeServer, json, noContent } from '../test/server';
 import { api, ApiError, call, setUnauthenticatedHandler } from './client';
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   setUnauthenticatedHandler(() => {});
 });
@@ -18,6 +19,14 @@ describe('call', () => {
     await call(() => api.POST('/api/v1/auth/logout'));
     expect(server.requests[0].headers.get('X-XSRF-TOKEN')).toBeNull();
     expect(server.requests[1].headers.get('X-XSRF-TOKEN')).toBe('token-123');
+  });
+
+  it('sends the CSRF token of the __Host- cookie, set behind an https public address', async () => {
+    // jsdom runs over http, where a browser refuses __Host- cookies: the cookies are given as read.
+    vi.spyOn(document, 'cookie', 'get').mockReturnValue('LORE_X=1; __Host-XSRF-TOKEN=token-host');
+    const server = fakeServer({ 'POST /api/v1/auth/logout': () => noContent() });
+    await call(() => api.POST('/api/v1/auth/logout'));
+    expect(server.requests[0].headers.get('X-XSRF-TOKEN')).toBe('token-host');
   });
 
   it('turns a problem into an ApiError with its code, fields and details', async () => {
@@ -60,6 +69,25 @@ describe('call', () => {
     await call(() => api.POST('/api/v1/auth/logout'));
     expect(attempts).toBe(2);
     expect(server.requests.at(-1)?.headers.get('X-XSRF-TOKEN')).toBe('fresh');
+  });
+
+  it('tries the other CSRF cookie when one is left from before a change of the public address', async () => {
+    // The public address went from https to http: the server now names its cookie XSRF-TOKEN, and
+    // the browser still holds the __Host- one, until it closes.
+    vi.spyOn(document, 'cookie', 'get').mockReturnValue('__Host-XSRF-TOKEN=stale; XSRF-TOKEN=live');
+    const server = fakeServer({
+      'GET /api/v1/session': () => json({ setupRequired: false, organization: null, user: null }),
+      'POST /api/v1/auth/logout': (request) =>
+        request.headers.get('X-XSRF-TOKEN') === 'live' ? noContent() : json({ status: 403, code: 'csrf' }, 403),
+    });
+    await call(() => api.POST('/api/v1/auth/logout'));
+    const sent = () => server.requests.filter((request) => request.method === 'POST').map((request) => request.headers.get('X-XSRF-TOKEN'));
+    expect(sent()).toEqual(['stale', 'stale', 'live']);
+
+    // The cookie accepted comes first from then on.
+    await call(() => api.POST('/api/v1/auth/logout'));
+    expect(sent().at(-1)).toBe('live');
+    expect(sent()).toHaveLength(4);
   });
 
   it('says when the server does not answer', async () => {

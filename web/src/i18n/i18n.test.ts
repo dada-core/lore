@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { createI18n } from './i18n';
 import { frenchTypography, messages } from './messages';
 
-const EM_DASH = String.fromCharCode(0x2014);
+const DASHES = [String.fromCharCode(0x2014), String.fromCharCode(0x2013)];
 
 describe('messages', () => {
-  it('has every text in both languages, without an em dash', () => {
+  it('has every text in both languages, without an em dash nor an en dash', () => {
     expect(Object.keys(messages.fr).sort()).toEqual(Object.keys(messages.en).sort());
     for (const locale of ['fr', 'en'] as const) {
       for (const [key, text] of Object.entries(messages[locale])) {
         expect(text, `${locale} ${key}`).not.toBe('');
-        expect(text, `${locale} ${key}`).not.toContain(EM_DASH);
+        for (const dash of DASHES) expect(text, `${locale} ${key}`).not.toContain(dash);
       }
     }
   });

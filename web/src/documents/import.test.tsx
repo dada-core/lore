@@ -264,7 +264,7 @@ describe('import window', () => {
     expect(list.getByText(/le fichier est protégé par un mot de passe\. Retirez la protection, puis importez le fichier à nouveau\./)).toBeInTheDocument();
     expect(list.getAllByRole('button', { name: /^Relancer/ })).toHaveLength(1);
     expect(list.getByText(/l’extraction a pris plus de temps que la limite fixée/)).toBeInTheDocument();
-    expect(list.getByText(/seuls son titre et sa description sont recherchables/)).toBeInTheDocument();
+    expect(list.getByText(/ses pages numérisées ne sont pas recherchables/)).toBeInTheDocument();
     expect(news(dialog)).toContainEqual(expect.stringMatching(/^plan-reprise-copie\.docx\s: Indexé\s: 9 sections Ce fichier est identique/));
 
     // Each button names its file: the list holds several of them.
@@ -337,6 +337,30 @@ describe('import window', () => {
     expect(sessions).toBe(2);
     expect(uploads.sent[1].headers['X-XSRF-TOKEN']).toBe('nouveau');
     expect(uploads.sent[1].filename).toBe('runbook-redis.md');
+  });
+
+  it('sends the file with the other CSRF cookie when one is left from before a change of the public address', async () => {
+    // The public address went from https to http: the browser still holds the __Host- cookie, until it closes.
+    const cookies = vi.spyOn(document, 'cookie', 'get').mockReturnValue('__Host-XSRF-TOKEN=perime; XSRF-TOKEN=valide');
+    try {
+      server();
+      const uploads = fakeUploads();
+      open('/spaces/infrastructure?open=import');
+      const browser = userEvent.setup();
+      const dialog = await importWindow();
+
+      await browser.upload(within(dialog).getByLabelText('Fichiers à importer'), [file('runbook-redis.md')]);
+      expect(uploads.sent[0].headers['X-XSRF-TOKEN']).toBe('perime');
+      await act(async () => uploads.sent[0].respond(403, { status: 403, code: 'csrf' }));
+      await waitFor(() => expect(uploads.sent).toHaveLength(2));
+      expect(uploads.sent[1].headers['X-XSRF-TOKEN']).toBe('perime');
+      await act(async () => uploads.sent[1].respond(403, { status: 403, code: 'csrf' }));
+      await waitFor(() => expect(uploads.sent).toHaveLength(3));
+      expect(uploads.sent[2].headers['X-XSRF-TOKEN']).toBe('valide');
+      expect(uploads.sent[2].filename).toBe('runbook-redis.md');
+    } finally {
+      cookies.mockRestore();
+    }
   });
 
   it('asks before closing while files are being sent', async () => {

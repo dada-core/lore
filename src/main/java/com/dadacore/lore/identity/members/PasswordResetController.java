@@ -5,6 +5,7 @@ import com.dadacore.lore.identity.login.SessionInfo;
 import com.dadacore.lore.identity.login.SessionInfos;
 import com.dadacore.lore.identity.security.LoginSessions;
 import com.dadacore.lore.shared.RequestInfo;
+import com.dadacore.lore.shared.Secrets;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -37,9 +38,21 @@ class PasswordResetController {
     }
 
     record InspectRequest(String token) {
+
+        /** The token stays out of the logs. */
+        @Override
+        public String toString() {
+            return "InspectRequest[token=" + Secrets.hide(token) + "]";
+        }
     }
 
     record CompleteRequest(String token, String password) {
+
+        /** The token and the password stay out of the logs. */
+        @Override
+        public String toString() {
+            return "CompleteRequest[token=" + Secrets.hide(token) + ", password=" + Secrets.hide(password) + "]";
+        }
     }
 
     /** {@code 404 invalid_link} when the link is unknown, expired, already used or replaced. */
