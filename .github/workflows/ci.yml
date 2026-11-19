@@ -218,7 +218,7 @@ jobs:
           echo "LORE_SETUP_CODE=$code" >> "$GITHUB_ENV"
       - name: The journeys
         working-directory: web
-        run: npm run e2e
+        run: DEBUG=pw:browser npm run e2e 2> browser.log
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
@@ -226,6 +226,7 @@ jobs:
           path: |
             web/e2e-report/
             web/e2e-results/
+            web/browser.log
           retention-days: 7
       - name: Logs
         if: failure()
